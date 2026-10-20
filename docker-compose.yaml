@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: wagering
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d wagering"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:latest
+    environment:
+      SERVICES: sqs
+      DEBUG: 0
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./docker/localstack/init.sh:/etc/localstack/init/ready.d/init.sh:ro
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/keycloak/realm:/opt/keycloak/data/import:ro
+
+  app:
+    build: .
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://app:app@postgres:5432/wagering
+      SQS_ENDPOINT: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_QUEUE_TRANSACTIONS_URL: http://localstack:4566/000000000000/wager-transactions.fifo
+      SQS_QUEUE_DLQ_URL: http://localstack:4566/000000000000/wager-transactions-dlq.fifo
+      SQS_QUEUE_EVENTS_URL: http://localstack:4566/000000000000/wagering-events.fifo
+      AUTH_ENABLED: "true"
+      AUTH_ISSUER_URL: http://keycloak:8080/realms/jungle
+      AUTH_AUDIENCE: wagering-api
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    deploy:
+      replicas: 1 # escalável: docker compose up --scale app=3
+
+volumes:
+  pgdata:
