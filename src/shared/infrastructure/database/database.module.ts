@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { MikroORM } from '@mikro-orm/core';
 import { runMigrations } from './migration-runner';
-import { mikroOrmConfig } from './mikro-orm.config';
+import { getMikroOrmConfig } from './mikro-orm.config';
 
 export const MIKRO_ORM = Symbol('MIKRO_ORM');
 export const ENTITY_MANAGER = Symbol('ENTITY_MANAGER');
@@ -18,7 +18,7 @@ export const ENTITY_MANAGER = Symbol('ENTITY_MANAGER');
     {
       provide: MIKRO_ORM,
       useFactory: async () => {
-        const orm = await MikroORM.init(mikroOrmConfig);
+        const orm = await MikroORM.init(getMikroOrmConfig());
         if (process.env.MIGRATIONS_ON_START !== 'false') {
           await runMigrations(orm, { optional: true });
         }

@@ -1,6 +1,8 @@
 import type { EntityManager } from '@mikro-orm/core';
 import type { Wallet } from '../../domain/wallet';
 
+export const WALLET_REPOSITORY = Symbol('WALLET_REPOSITORY');
+
 /**
  * Porta do repositório de wallets. A unidade de trabalho é explícita:
  * as operações recebem o EntityManager da transação corrente, de modo que

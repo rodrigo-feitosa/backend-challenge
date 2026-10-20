@@ -1,6 +1,6 @@
 import { MikroORM } from '@mikro-orm/core';
 import { Client } from 'pg';
-import { mikroOrmConfig } from '../../src/shared/infrastructure/database/mikro-orm.config';
+import { getMikroOrmConfig } from '../../src/shared/infrastructure/database/mikro-orm.config';
 import { startContainer, stopContainer } from './docker-harness';
 
 /**
@@ -10,6 +10,8 @@ import { startContainer, stopContainer } from './docker-harness';
 export interface TestDatabase {
   orm: MikroORM;
   containerName: string;
+  /** Porta no host onde o PostgreSQL responde. */
+  hostPort: number;
   stop(): Promise<void>;
 }
 
@@ -50,7 +52,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   const clientUrl = `postgresql://test:test@127.0.0.1:${container.hostPort}/wagering_test`;
   await waitForPostgres(clientUrl);
   const orm = await MikroORM.init({
-    ...mikroOrmConfig,
+    ...getMikroOrmConfig(),
     clientUrl,
     connect: false,
     debug: false,
@@ -59,6 +61,7 @@ export async function startTestDatabase(): Promise<TestDatabase> {
   return {
     orm,
     containerName,
+    hostPort: container.hostPort,
     stop: async () => {
       await orm.close(true);
       await stopContainer(containerName);

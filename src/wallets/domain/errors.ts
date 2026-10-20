@@ -20,3 +20,13 @@ export class ReversalWouldOverdrawError extends DomainError {
     super('REVERSAL_WOULD_OVERDRAW', message);
   }
 }
+
+/**
+ * Wallet já existe para (playerId, currency) — invariante §6.2 imposta
+ * por UNIQUE no schema; o use case traduz a violação em conflito HTTP 409.
+ */
+export class WalletAlreadyExistsError extends DomainError {
+  constructor(message: string) {
+    super('WALLET_ALREADY_EXISTS', message);
+  }
+}

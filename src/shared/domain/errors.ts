@@ -27,3 +27,17 @@ export class CurrencyMismatchError extends DomainError {
     super('CURRENCY_MISMATCH', message);
   }
 }
+
+/** Recurso não encontrado — mapeia para HTTP 404. */
+export class NotFoundError extends DomainError {
+  constructor(message: string) {
+    super('NOT_FOUND', message);
+  }
+}
+
+/** Requisição malformada / payload inválido — mapeia para HTTP 400. */
+export class ValidationError extends DomainError {
+  constructor(message: string) {
+    super('VALIDATION_ERROR', message);
+  }
+}
