@@ -1,5 +1,6 @@
 import { type MigrationObject } from '@mikro-orm/core';
 import { Migration20260801000000 } from './Migration20260801000000';
+import { Migration20260802000000 } from './Migration20260802000000';
 
 /**
  * Lista explícita de migrations — determinística em qualquer runtime
@@ -8,4 +9,5 @@ import { Migration20260801000000 } from './Migration20260801000000';
  */
 export const migrationsList: MigrationObject[] = [
   { name: 'Migration20260801000000', class: Migration20260801000000 },
+  { name: 'Migration20260802000000', class: Migration20260802000000 },
 ];

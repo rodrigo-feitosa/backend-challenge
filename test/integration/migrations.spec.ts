@@ -29,7 +29,9 @@ describe('migrations e constraints (I1)', () => {
     };
 
     expect(await tables()).toContain('wallets');
-    await migrator.down();
+    while ((await migrator.down()).length > 0) {
+      // reverte todas as migrations, uma a uma
+    }
     expect(await tables()).not.toContain('wallets');
     await migrator.up();
     expect(await tables()).toContain('wallets');
