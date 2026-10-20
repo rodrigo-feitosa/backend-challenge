@@ -16,7 +16,9 @@ services:
       retries: 10
 
   localstack:
-    image: localstack/localstack:latest
+    # Versão fixada: a partir de 2026.10 a imagem "latest" exige licença
+    # (exit 55). 3.8.1 é community e sobe SQS sem credenciais.
+    image: localstack/localstack:3.8.1
     environment:
       SERVICES: sqs
       DEBUG: 0

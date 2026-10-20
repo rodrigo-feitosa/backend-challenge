@@ -19,7 +19,7 @@ awslocal sqs create-queue \
     \"FifoQueue\": \"true\",
     \"ContentBasedDeduplication\": \"true\",
     \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":5}\",
-    \"VisibilityTimeout\": 90
+    \"VisibilityTimeout\": \"90\"
   }" >/dev/null
 
 awslocal sqs create-queue \

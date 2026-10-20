@@ -1,4 +1,5 @@
 import { defineConfig } from '@mikro-orm/postgresql';
+import { migrationsList } from '../../../../migrations';
 import { entities } from './entities';
 
 /**
@@ -19,10 +20,10 @@ export const mikroOrmConfig = defineConfig({
     max: 20,
   },
   migrations: {
-    path: 'migrations',
-    pathTs: 'migrations',
     tableName: 'mikro_orm_migrations',
     transactional: true,
     allOrNothing: true,
+    snapshot: false,
+    migrationsList,
   },
 });
