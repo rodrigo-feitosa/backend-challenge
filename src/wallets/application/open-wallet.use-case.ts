@@ -46,7 +46,8 @@ export class OpenWalletUseCase {
     });
 
     try {
-      await this.em.transactional(async (tx) => {
+      // fork por execução — ver nota em SubmitWagerTransactionUseCase
+      await this.em.fork().transactional(async (tx) => {
         await this.walletRepository.insert(wallet, tx);
         if (command.initialBalance.isPositive()) {
           await this.insertOpening(wallet, command.initialBalance, tx);

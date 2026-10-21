@@ -3,6 +3,15 @@ import type { Wallet } from '../../domain/wallet';
 
 export const WALLET_REPOSITORY = Symbol('WALLET_REPOSITORY');
 
+export interface UpdateWalletOptions {
+  /**
+   * CAS (compare-and-swap): só aplica se o saldo no banco ainda for o
+   * esperado — segunda barreira de defesa do ADR-003 (o lock pessimista
+   * é a primeira). 0 linhas afetadas ⇒ modificação concorrente inesperada.
+   */
+  expectedBalanceCents?: bigint;
+}
+
 /**
  * Porta do repositório de wallets. A unidade de trabalho é explícita:
  * as operações recebem o EntityManager da transação corrente, de modo que
@@ -14,7 +23,7 @@ export interface WalletRepository {
   insert(wallet: Wallet, em: EntityManager): Promise<void>;
 
   /** Atualiza saldo/version/updatedAt e persiste as entradas pendentes. */
-  update(wallet: Wallet, em: EntityManager): Promise<void>;
+  update(wallet: Wallet, em: EntityManager, options?: UpdateWalletOptions): Promise<void>;
 
   /** Busca sem lock (consultas). */
   findById(walletId: string, em: EntityManager): Promise<Wallet | null>;

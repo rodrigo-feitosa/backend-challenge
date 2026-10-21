@@ -1,8 +1,9 @@
 import { LockMode, type EntityManager } from '@mikro-orm/core';
 import { Money } from '../../shared/domain/money';
+import { DomainError } from '../../shared/domain/errors';
 import { Wallet } from '../domain/wallet';
 import { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
-import type { WalletRepository } from '../application/ports/wallet-repository';
+import type { UpdateWalletOptions, WalletRepository } from '../application/ports/wallet-repository';
 import { WalletLedgerEntrySchema, WalletSchema, type WalletEntity } from './wallet.entities';
 
 /**
@@ -10,6 +11,9 @@ import { WalletLedgerEntrySchema, WalletSchema, type WalletEntity } from './wall
  * Mapeamento explícito entidade ⇄ agregado; Money ⇄ centavos via string/BigInt
  * (exato nas duas direções, ADR-002). As entradas pendentes da wallet são
  * persistidas na MESMA transação do saldo — saldo e ledger nunca divergem.
+ *
+ * O update é CAS condicional (segunda barreira do ADR-003): só aplica
+ * quando o saldo no banco ainda é o esperado sob o lock.
  */
 
 export class MikroWalletRepository implements WalletRepository {
@@ -18,16 +22,24 @@ export class MikroWalletRepository implements WalletRepository {
     await insertPendingEntries(wallet, em);
   }
 
-  async update(wallet: Wallet, em: EntityManager): Promise<void> {
-    await em.nativeUpdate(
+  async update(wallet: Wallet, em: EntityManager, options?: UpdateWalletOptions): Promise<void> {
+    const affected = await em.nativeUpdate(
       WalletSchema,
-      { id: wallet.id },
+      options?.expectedBalanceCents !== undefined
+        ? { id: wallet.id, balanceCents: options.expectedBalanceCents.toString() }
+        : { id: wallet.id },
       {
         balanceCents: wallet.balance.toCents().toString(),
         version: wallet.version,
         updatedAt: wallet.updatedAt,
       },
     );
+    if (affected === 0) {
+      throw new DomainError(
+        'INFRASTRUCTURE_ERROR',
+        `concurrent modification detected on wallet ${wallet.id} (CAS mismatch under lock)`,
+      );
+    }
     await insertPendingEntries(wallet, em);
   }
 

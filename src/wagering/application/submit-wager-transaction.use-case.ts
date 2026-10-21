@@ -96,7 +96,9 @@ export class SubmitWagerTransactionUseCase {
       money: command.money.toJSON(),
     });
 
-    return this.em.transactional(async (tx) => {
+    // fork por execução: um EntityManager não suporta transações concorrentes
+    // (requisições simultâneas compartilhariam contexto e serializariam)
+    return this.em.fork().transactional(async (tx) => {
       // (1) lock pessimista da wallet — a unidade de concorrência é a walletId
       const wallet = await this.wallets.lockById(command.walletId, tx);
 
@@ -197,7 +199,7 @@ export class SubmitWagerTransactionUseCase {
       throw new DomainError('INFRASTRUCTURE_ERROR', 'idempotency conflict but original transaction not found');
     }
     if (existing.idempotencyKey === command.idempotencyKey && existing.payloadHash === payloadHash) {
-      return this.replayResult(existing);
+      return this.replayResult(existing, tx);
     }
     return {
       outcome: 'CONFLICT',
@@ -208,8 +210,10 @@ export class SubmitWagerTransactionUseCase {
     };
   }
 
-  private async replayResult(existing: WagerTransaction): Promise<SubmitWagerResult> {
-    const snapshot = await this.transactions.readBalanceSnapshot(existing.id, this.em.fork());
+  private async replayResult(existing: WagerTransaction, tx: EntityManager): Promise<SubmitWagerResult> {
+    // usa a conexão transacional: um fork extra aqui esgotaria o pool sob
+    // concorrência (deadlock de pool — transações esperando 2ª conexão)
+    const snapshot = await this.transactions.readBalanceSnapshot(existing.id, tx);
     switch (existing.status) {
       case WagerTransactionStatus.Processed:
         return { outcome: 'PROCESSED', transaction: existing, balanceAfter: snapshot, failureCode: null, idempotentReplay: true };
@@ -377,8 +381,10 @@ export class SubmitWagerTransactionUseCase {
       throw err;
     }
 
-    // saldo + ledger na MESMA transação (invariante §6.2)
-    await this.wallets.update(wallet, tx);
+    // saldo + ledger na MESMA transação (invariante §6.2); CAS como segunda
+    // barreira de concorrência (ADR-003): só aplica se o saldo no banco
+    // ainda for o que lemos sob o lock
+    await this.wallets.update(wallet, tx, { expectedBalanceCents: entry.balanceBefore.toCents() });
 
     transaction.markProcessed(reference?.id, this.clock.now());
     await this.transactions.update(transaction, tx, { balanceSnapshot: wallet.balance });
