@@ -32,7 +32,7 @@ export class OutboxMessageEntity {
   aggregateId!: string;
   eventType!: string;
   version!: number;
-  payload!: string; // coluna jsonb; driver entrega string
+  payload!: Record<string, unknown>; // coluna jsonb; MikroORM serializa/parsa
   occurredAt!: Date;
   status!: string;
   attempts!: number;

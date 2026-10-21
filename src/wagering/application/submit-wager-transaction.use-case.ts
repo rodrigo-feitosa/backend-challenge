@@ -13,14 +13,13 @@ import { ENTITY_MANAGER } from '../../shared/infrastructure/database/database.mo
 import { WagerTransaction, WagerTransactionKind, WagerTransactionStatus } from '../domain/wager-transaction';
 import { FailureCode } from '../domain/failure-code';
 import { canonicalPayloadHash } from './canonical-payload-hash';
-import {
-  DOMAIN_EVENT_COLLECTOR,
-  type DomainEventCollector,
-  type WagerTransactionPendingReferenceData,
-  type WagerTransactionProcessedData,
-  type WagerTransactionRejectedData,
-  type WalletBalanceChangedData,
-} from './domain-events';
+import { OUTBOX_REPOSITORY, type OutboxRepository } from '../../messaging/application/ports/outbox-repository';
+import { OutboxMessage } from '../../messaging/domain/outbox-message';
+import type { EventContext, IntegrationEvent } from '../../messaging/domain/integration-event';
+import { WagerTransactionProcessed } from '../../messaging/domain/events/wager-transaction-processed';
+import { WagerTransactionRejected } from '../../messaging/domain/events/wager-transaction-rejected';
+import { WagerTransactionPendingReference } from '../../messaging/domain/events/wager-transaction-pending-reference';
+import { WalletBalanceChanged } from '../../messaging/domain/events/wallet-balance-changed';
 import {
   WAGER_TRANSACTION_REPOSITORY,
   type PendingReferenceSchedule,
@@ -43,6 +42,8 @@ export interface SubmitWagerCommand {
 
 export interface ExecutionContext {
   source: 'HTTP' | 'SQS';
+  /** Correlação: header X-Correlation-ID (HTTP) ou messageId (SQS). */
+  correlationId: string;
   inboxMessageId?: string;
 }
 
@@ -78,13 +79,13 @@ export class SubmitWagerTransactionUseCase {
   constructor(
     @Inject(WAGER_TRANSACTION_REPOSITORY) private readonly transactions: WagerTransactionRepository,
     @Inject(WALLET_REPOSITORY) private readonly wallets: WalletRepository,
-    @Inject(DOMAIN_EVENT_COLLECTOR) private readonly events: DomainEventCollector,
+    @Inject(OUTBOX_REPOSITORY) private readonly outbox: OutboxRepository,
     @Inject(ID_GENERATOR) private readonly ids: IdGeneratorPort,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ENTITY_MANAGER) private readonly em: EntityManager,
   ) {}
 
-  async execute(command: SubmitWagerCommand, _context: ExecutionContext): Promise<SubmitWagerResult> {
+  async execute(command: SubmitWagerCommand, context: ExecutionContext): Promise<SubmitWagerResult> {
     const payloadHash = canonicalPayloadHash({
       providerId: command.providerId,
       externalTransactionId: command.externalTransactionId,
@@ -95,6 +96,7 @@ export class SubmitWagerTransactionUseCase {
       kind: command.kind,
       money: command.money.toJSON(),
     });
+    const correlationId = context.correlationId || this.ids.newId();
 
     // fork por execução: um EntityManager não suporta transações concorrentes
     // (requisições simultâneas compartilhariam contexto e serializariam)
@@ -121,7 +123,11 @@ export class SubmitWagerTransactionUseCase {
           referenceExternalTransactionId: command.referenceExternalTransactionId,
           createdAt: this.clock.now(),
         });
-        return this.reject(null, phantom, FailureCode.WalletNotFound, `wallet ${command.walletId} not found`);
+        phantom.reject(FailureCode.WalletNotFound);
+        // a transação não é persistida (FK), mas o evento de rejeição vai
+        // para a outbox (não tem FK) — rastreável
+        await this.emit(tx, WagerTransactionRejected.from(phantom, this.eventCtx(correlationId, phantom)));
+        return { outcome: 'REJECTED', transaction: phantom, balanceAfter: null, failureCode: FailureCode.WalletNotFound, idempotentReplay: false };
       }
 
       // (2) INSERT da transação (em savepoint — violação única não aborta a
@@ -159,6 +165,7 @@ export class SubmitWagerTransactionUseCase {
           transaction,
           FailureCode.WalletPlayerMismatch,
           `wallet ${wallet.id} belongs to player ${wallet.playerId}, not ${command.playerId}`,
+          correlationId,
         );
       }
       if (wallet.currency !== command.money.currency) {
@@ -167,13 +174,14 @@ export class SubmitWagerTransactionUseCase {
           transaction,
           FailureCode.CurrencyMismatch,
           `operation currency ${command.money.currency} does not match wallet currency ${wallet.currency}`,
+          correlationId,
         );
       }
 
       // (4) resolução de referência (REFUND/ROLLBACK obrigatória; WIN opcional)
       let reference: WagerTransaction | null = null;
       if (transaction.referenceExternalTransactionId !== undefined) {
-        const resolved = await this.resolveReference(tx, transaction);
+        const resolved = await this.resolveReference(tx, transaction, correlationId);
         if (resolved.outcome === 'pending') {
           return resolved.result;
         }
@@ -181,7 +189,7 @@ export class SubmitWagerTransactionUseCase {
       }
 
       // (5-7) aplicação + persistência + eventos
-      return this.apply(tx, wallet, transaction, reference);
+      return this.apply(tx, wallet, transaction, reference, correlationId);
     });
   }
 
@@ -242,18 +250,19 @@ export class SubmitWagerTransactionUseCase {
   private async resolveReference(
     tx: EntityManager,
     transaction: WagerTransaction,
+    correlationId: string,
   ): Promise<{ outcome: 'ok'; reference: WagerTransaction } | { outcome: 'pending'; result: SubmitWagerResult }> {
     const refExternalId = transaction.referenceExternalTransactionId as string;
     const reference = await this.transactions.findReference(transaction.providerId, refExternalId, tx);
     if (!reference || reference.status !== WagerTransactionStatus.Processed) {
       // ausente ou não-PROCESSADA → PENDING_REFERENCE (regra 7.8)
-      return { outcome: 'pending', result: await this.pendReference(tx, transaction) };
+      return { outcome: 'pending', result: await this.pendReference(tx, transaction, correlationId) };
     }
     if (!isReferenceKindAllowed(transaction.kind, reference.kind)) {
       return {
         outcome: 'pending',
         result: await this.reject(tx, transaction, FailureCode.ReferenceInvalidKind,
-          `${transaction.kind} cannot reference ${reference.kind}`),
+          `${transaction.kind} cannot reference ${reference.kind}`, correlationId),
       };
     }
     if (
@@ -265,7 +274,7 @@ export class SubmitWagerTransactionUseCase {
       return {
         outcome: 'pending',
         result: await this.reject(tx, transaction, FailureCode.ReferenceMismatch,
-          'reference does not belong to the same player/wallet/currency/round'),
+          'reference does not belong to the same player/wallet/currency/round', correlationId),
       };
     }
     // A igualdade de valor vale para REFUND/ROLLBACK (regra 7.5: reversão
@@ -274,7 +283,7 @@ export class SubmitWagerTransactionUseCase {
       return {
         outcome: 'pending',
         result: await this.reject(tx, transaction, FailureCode.ReferenceAmountMismatch,
-          `amount ${transaction.money.toString()} differs from reference amount ${reference.money.toString()}`),
+          `amount ${transaction.money.toString()} differs from reference amount ${reference.money.toString()}`, correlationId),
       };
     }
     if (
@@ -284,60 +293,35 @@ export class SubmitWagerTransactionUseCase {
       return {
         outcome: 'pending',
         result: await this.reject(tx, transaction, FailureCode.ReferenceAlreadyReverted,
-          `${transaction.kind} for reference ${refExternalId} already exists in active state`),
+          `${transaction.kind} for reference ${refExternalId} already exists in active state`, correlationId),
       };
     }
     return { outcome: 'ok', reference };
   }
 
-  private async pendReference(tx: EntityManager, transaction: WagerTransaction): Promise<SubmitWagerResult> {
+  private async pendReference(tx: EntityManager, transaction: WagerTransaction, correlationId: string): Promise<SubmitWagerResult> {
     transaction.markPendingReference();
     const schedule: PendingReferenceSchedule = {
       attempts: 1,
       nextRetryAt: new Date(this.clock.now().getTime() + pendingRefBaseDelayMs()),
     };
     await this.transactions.update(transaction, tx, { pendingReferenceSchedule: schedule });
-    const data: WagerTransactionPendingReferenceData = {
-      transactionId: transaction.id,
-      providerId: transaction.providerId,
-      externalTransactionId: transaction.externalTransactionId,
-      walletId: transaction.walletId,
-      playerId: transaction.playerId,
-      roundId: transaction.roundId,
-      kind: transaction.kind,
-      money: transaction.money.toJSON(),
-      referenceExternalTransactionId: transaction.referenceExternalTransactionId ?? '',
-      attempts: schedule.attempts,
-      nextRetryAt: schedule.nextRetryAt.toISOString(),
-    };
-    this.events.collect({ eventType: 'WagerTransactionPendingReference', aggregateId: transaction.walletId, data });
+    await this.emit(tx, WagerTransactionPendingReference.from(transaction, schedule, this.eventCtx(correlationId, transaction)));
     return { outcome: 'PENDING_REFERENCE', transaction, balanceAfter: null, failureCode: null, idempotentReplay: false };
   }
 
   // ---- rejeição e aplicação ------------------------------------------------
 
   private async reject(
-    tx: EntityManager | null,
+    tx: EntityManager,
     transaction: WagerTransaction,
     code: FailureCode,
     _reason: string, // detalhe humano do motivo — logado na ET15 (observabilidade)
+    correlationId: string,
   ): Promise<SubmitWagerResult> {
     transaction.reject(code);
-    if (tx) {
-      await this.transactions.update(transaction, tx);
-    }
-    const data: WagerTransactionRejectedData = {
-      transactionId: transaction.id,
-      providerId: transaction.providerId,
-      externalTransactionId: transaction.externalTransactionId,
-      walletId: transaction.walletId,
-      playerId: transaction.playerId,
-      roundId: transaction.roundId,
-      kind: transaction.kind,
-      money: transaction.money.toJSON(),
-      failureCode: code,
-    };
-    this.events.collect({ eventType: 'WagerTransactionRejected', aggregateId: transaction.walletId, data });
+    await this.transactions.update(transaction, tx);
+    await this.emit(tx, WagerTransactionRejected.from(transaction, this.eventCtx(correlationId, transaction)));
     return { outcome: 'REJECTED', transaction, balanceAfter: null, failureCode: code, idempotentReplay: false };
   }
 
@@ -346,12 +330,13 @@ export class SubmitWagerTransactionUseCase {
     wallet: Wallet,
     transaction: WagerTransaction,
     reference: WagerTransaction | null,
+    correlationId: string,
   ): Promise<SubmitWagerResult> {
     if (!transaction.affectsBalance()) {
       // LOSS: registra o resultado sem mover saldo (§7); snapshot do saldo atual
       transaction.markProcessed(reference?.id, this.clock.now());
       await this.transactions.update(transaction, tx, { balanceSnapshot: wallet.balance });
-      this.collectProcessed(transaction);
+      await this.emit(tx, WagerTransactionProcessed.from(transaction, this.eventCtx(correlationId, transaction)));
       return { outcome: 'PROCESSED', transaction, balanceAfter: wallet.balance, failureCode: null, idempotentReplay: false };
     }
 
@@ -373,10 +358,10 @@ export class SubmitWagerTransactionUseCase {
       }
     } catch (err) {
       if (err instanceof InsufficientFundsError) {
-        return this.reject(tx, transaction, FailureCode.InsufficientFunds, err.message);
+        return this.reject(tx, transaction, FailureCode.InsufficientFunds, err.message, correlationId);
       }
       if (err instanceof ReversalWouldOverdrawError) {
-        return this.reject(tx, transaction, FailureCode.ReversalWouldOverdraw, err.message);
+        return this.reject(tx, transaction, FailureCode.ReversalWouldOverdraw, err.message, correlationId);
       }
       throw err;
     }
@@ -389,42 +374,25 @@ export class SubmitWagerTransactionUseCase {
     transaction.markProcessed(reference?.id, this.clock.now());
     await this.transactions.update(transaction, tx, { balanceSnapshot: wallet.balance });
 
-    this.collectProcessed(transaction);
-    this.collectBalanceChanged(wallet, transaction, entry, direction);
+    // cada evento tem seu próprio eventId/occurredAt (PK da outbox é o eventId)
+    await this.emit(tx, WagerTransactionProcessed.from(transaction, this.eventCtx(correlationId, transaction)));
+    await this.emit(tx, WalletBalanceChanged.from(wallet, entry, this.eventCtx(correlationId, transaction)));
     return { outcome: 'PROCESSED', transaction, balanceAfter: wallet.balance, failureCode: null, idempotentReplay: false };
   }
 
-  private collectProcessed(transaction: WagerTransaction): void {
-    const data: WagerTransactionProcessedData = {
-      transactionId: transaction.id,
-      providerId: transaction.providerId,
-      externalTransactionId: transaction.externalTransactionId,
-      walletId: transaction.walletId,
-      playerId: transaction.playerId,
-      roundId: transaction.roundId,
-      kind: transaction.kind,
-      money: transaction.money.toJSON(),
-      processedAt: (transaction.processedAt ?? this.clock.now()).toISOString(),
-    };
-    this.events.collect({ eventType: 'WagerTransactionProcessed', aggregateId: transaction.walletId, data });
+  /** Evento → OutboxMessage → mesma transação SQL (§11). */
+  private async emit(tx: EntityManager, event: IntegrationEvent<unknown>): Promise<void> {
+    await this.outbox.enqueue(OutboxMessage.enqueue(event), tx);
   }
 
-  private collectBalanceChanged(
-    wallet: Wallet,
-    transaction: WagerTransaction,
-    entry: WalletLedgerEntry,
-    direction: LedgerDirection,
-  ): void {
-    const data: WalletBalanceChangedData = {
-      walletId: wallet.id,
-      transactionId: transaction.id,
-      direction,
-      money: transaction.money.toJSON(),
-      balanceBefore: entry.balanceBefore.toJSON(),
-      balanceAfter: entry.balanceAfter.toJSON(),
-      walletVersion: wallet.version,
+  private eventCtx(correlationId: string, transaction: WagerTransaction): EventContext {
+    return {
+      eventId: this.ids.newId(),
+      aggregateId: transaction.walletId,
+      correlationId,
+      causationId: transaction.id,
+      occurredAt: this.clock.now(),
     };
-    this.events.collect({ eventType: 'WalletBalanceChanged', aggregateId: wallet.id, data });
   }
 }
 

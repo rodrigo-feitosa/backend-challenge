@@ -2,9 +2,11 @@ import { Global, Module } from '@nestjs/common';
 import { MikroLedgerRepository } from '../../wallets/infrastructure/mikro-ledger.repository';
 import { MikroWalletRepository } from '../../wallets/infrastructure/mikro-wallet.repository';
 import { MikroWagerTransactionRepository } from '../../wagering/infrastructure/mikro-wager-transaction.repository';
+import { MikroOutboxRepository } from '../../messaging/infrastructure/mikro-outbox.repository';
 import { LEDGER_REPOSITORY } from '../../wallets/application/ports/ledger-repository';
 import { WALLET_REPOSITORY } from '../../wallets/application/ports/wallet-repository';
 import { WAGER_TRANSACTION_REPOSITORY } from '../../wagering/application/ports/wager-transaction-repository';
+import { OUTBOX_REPOSITORY } from '../../messaging/application/ports/outbox-repository';
 
 /**
  * Módulo global de repositórios (implementações MikroORM das portas).
@@ -17,7 +19,8 @@ import { WAGER_TRANSACTION_REPOSITORY } from '../../wagering/application/ports/w
     { provide: WALLET_REPOSITORY, useClass: MikroWalletRepository },
     { provide: LEDGER_REPOSITORY, useClass: MikroLedgerRepository },
     { provide: WAGER_TRANSACTION_REPOSITORY, useClass: MikroWagerTransactionRepository },
+    { provide: OUTBOX_REPOSITORY, useClass: MikroOutboxRepository },
   ],
-  exports: [WALLET_REPOSITORY, LEDGER_REPOSITORY, WAGER_TRANSACTION_REPOSITORY],
+  exports: [WALLET_REPOSITORY, LEDGER_REPOSITORY, WAGER_TRANSACTION_REPOSITORY, OUTBOX_REPOSITORY],
 })
 export class RepositoriesModule {}

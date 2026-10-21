@@ -1,3 +1,4 @@
+import { randomUUID as cryptoRandomUUID } from 'node:crypto';
 import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
 import type { Response as ExpressResponse } from 'express';
 import { Money } from '../../shared/domain/money';
@@ -48,11 +49,14 @@ export class WageringController {
   async create(
     @Body() dto: SubmitTransactionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Headers('x-correlation-id') correlationHeader: string | undefined,
     @Res({ passthrough: true }) res: ExpressResponse,
   ): Promise<unknown> {
     if (!idempotencyKey || idempotencyKey.trim() === '') {
       throw new ValidationError('Idempotency-Key header is required');
     }
+    // correlationId: header de correlação ou gerado por requisição (ET15 o propaga nos logs)
+    const correlationId = correlationHeader || cryptoRandomUUID();
     const result = await this.submit.execute(
       {
         providerId: dto.providerId,
@@ -66,7 +70,7 @@ export class WageringController {
         money: Money.from(dto.money),
         referenceExternalTransactionId: dto.referenceExternalTransactionId,
       },
-      { source: 'HTTP' },
+      { source: 'HTTP', correlationId },
     );
 
     switch (result.outcome) {
