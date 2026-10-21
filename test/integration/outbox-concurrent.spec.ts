@@ -104,13 +104,17 @@ describe('publishers concorrentes na outbox (I4/C6)', () => {
     await closer.publishBatch(TOTAL);
 
     const em = orm.em.fork();
-    const rows = (await em.execute(
-      `SELECT status, COUNT(*) AS n FROM outbox_messages WHERE id = ANY($1::uuid[]) GROUP BY status`,
-      [[...ids]],
-    )) as { status: string; n: string }[];
-    const byStatus = new Map(rows.map((r) => [r.status, Number(r.n)]));
-    expect(byStatus.get('PUBLISHED')).toBe(TOTAL);
-    expect(byStatus.get('PENDING')).toBeUndefined();
+    const rows = (await em.execute(`SELECT id, status FROM outbox_messages`)) as { id: string; status: string }[];
+    const byId = new Map(rows.map((r) => [r.id, r.status]));
+    let published = 0;
+    let pending = 0;
+    for (const id of ids) {
+      const status = byId.get(id);
+      if (status === 'PUBLISHED') published += 1;
+      if (status === 'PENDING') pending += 1;
+    }
+    expect(published).toBe(TOTAL);
+    expect(pending).toBe(0);
 
     // nenhuma mensagem publicada por ambos os workers (SKIP LOCKED: cada uma 1 vez)
     const allPublished = [...publisherA.publishedIds, ...publisherB.publishedIds];
