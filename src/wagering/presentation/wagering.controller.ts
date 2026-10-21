@@ -1,10 +1,11 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
 import type { Response as ExpressResponse } from 'express';
 import { Money } from '../../shared/domain/money';
 import { ValidationError } from '../../shared/domain/errors';
 import { WagerTransactionKind } from '../domain/wager-transaction';
 import { SubmitWagerTransactionUseCase } from '../application/submit-wager-transaction.use-case';
 import type { SubmitWagerResult } from '../application/submit-wager-transaction.use-case';
+import { TransactionQueries } from '../application/transaction-queries';
 import { SubmitTransactionDto } from './dto/submit-transaction.dto';
 
 /**
@@ -20,11 +21,29 @@ import { SubmitTransactionDto } from './dto/submit-transaction.dto';
  * 200 PROCESSED/replay · 202 PENDING_REFERENCE · 422 REJECTED+failureCode ·
  * 409 conflito · 400 payload inválido · 503 falha transitória.
  */
-@Controller('wagering')
+@Controller()
 export class WageringController {
-  constructor(private readonly submit: SubmitWagerTransactionUseCase) {}
+  constructor(
+    private readonly submit: SubmitWagerTransactionUseCase,
+    private readonly queries: TransactionQueries,
+  ) {}
 
-  @Post('transactions')
+  /** GET /wagering/transactions/:transactionId — id interno. */
+  @Get('wagering/transactions/:transactionId')
+  async getById(@Param('transactionId') transactionId: string): Promise<unknown> {
+    return toTransactionBody(await this.queries.getById(transactionId));
+  }
+
+  /** GET /providers/:providerId/wagering/transactions/:externalTransactionId — id no provedor. */
+  @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
+  async getByProviderAndExternal(
+    @Param('providerId') providerId: string,
+    @Param('externalTransactionId') externalTransactionId: string,
+  ): Promise<unknown> {
+    return toTransactionBody(await this.queries.getByProviderAndExternalId(providerId, externalTransactionId));
+  }
+
+  @Post('wagering/transactions')
   @HttpCode(HttpStatus.OK)
   async create(
     @Body() dto: SubmitTransactionDto,
@@ -70,6 +89,42 @@ export class WageringController {
         };
     }
   }
+}
+
+function toTransactionBody(tx: {
+  id: string;
+  providerId: string;
+  externalTransactionId: string;
+  idempotencyKey: string;
+  walletId: string;
+  playerId: string;
+  roundId: string;
+  gameId: string;
+  kind: string;
+  status: string;
+  money: { toJSON(): { amount: string; currency: string } };
+  referenceExternalTransactionId?: string | undefined;
+  failureCode?: string | undefined;
+  createdAt: Date;
+  processedAt?: Date | undefined;
+}): Record<string, unknown> {
+  return {
+    transactionId: tx.id,
+    providerId: tx.providerId,
+    externalTransactionId: tx.externalTransactionId,
+    idempotencyKey: tx.idempotencyKey,
+    walletId: tx.walletId,
+    playerId: tx.playerId,
+    roundId: tx.roundId,
+    gameId: tx.gameId,
+    kind: tx.kind,
+    status: tx.status,
+    amount: tx.money.toJSON(),
+    referenceExternalTransactionId: tx.referenceExternalTransactionId ?? null,
+    failureCode: tx.failureCode ?? null,
+    createdAt: tx.createdAt.toISOString(),
+    processedAt: tx.processedAt ? tx.processedAt.toISOString() : null,
+  };
 }
 
 function toBody(result: SubmitWagerResult): Record<string, unknown> {

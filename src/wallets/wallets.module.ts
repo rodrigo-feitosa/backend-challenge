@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { OpenWalletUseCase } from './application/open-wallet.use-case';
 import { WalletQueries } from './application/wallet-queries';
+import { ReconcileWalletUseCase } from './application/reconcile-wallet.use-case';
 import { WalletsController } from './presentation/wallets.controller';
 
 /**
@@ -9,6 +10,6 @@ import { WalletsController } from './presentation/wallets.controller';
  */
 @Module({
   controllers: [WalletsController],
-  providers: [OpenWalletUseCase, WalletQueries],
+  providers: [OpenWalletUseCase, WalletQueries, ReconcileWalletUseCase],
 })
 export class WalletsModule {}

@@ -3,6 +3,7 @@ import { Money } from '../../shared/domain/money';
 import { ValidationError } from '../../shared/domain/errors';
 import { OpenWalletUseCase } from '../application/open-wallet.use-case';
 import { WalletQueries } from '../application/wallet-queries';
+import { ReconcileWalletUseCase, type ReconciliationReport } from '../application/reconcile-wallet.use-case';
 import type { Wallet } from '../domain/wallet';
 import type { WalletLedgerEntry } from '../domain/wallet-ledger-entry';
 import { CreateWalletDto, ListLedgerQueryDto } from './dto/wallet.dto';
@@ -42,6 +43,7 @@ export class WalletsController {
   constructor(
     private readonly openWallet: OpenWalletUseCase,
     private readonly queries: WalletQueries,
+    private readonly reconcile: ReconcileWalletUseCase,
   ) {}
 
   @Post()
@@ -73,6 +75,18 @@ export class WalletsController {
       items: page.items.map(toLedgerItem),
       nextCursor: page.nextCursor,
     };
+  }
+
+  /**
+   * POST /wallets/:walletId/reconciliation (§9) — relatório de consistência.
+   * Nunca corrige silenciosamente: divergência → log + métrica + consistent: false.
+   * Retorna 200 mesmo divergente.
+   */
+  @Post(':id/reconciliation')
+  @HttpCode(200)
+  async reconciliation(@Param('id') id: string): Promise<ReconciliationReport> {
+    assertUuid(id);
+    return this.reconcile.execute(id);
   }
 }
 

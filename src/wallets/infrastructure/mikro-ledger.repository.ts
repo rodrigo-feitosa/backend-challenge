@@ -2,7 +2,7 @@ import type { EntityManager } from '@mikro-orm/core';
 import { Money } from '../../shared/domain/money';
 import { ValidationError } from '../../shared/domain/errors';
 import { LedgerDirection, WalletLedgerEntry } from '../domain/wallet-ledger-entry';
-import type { LedgerPage, LedgerRepository } from '../application/ports/ledger-repository';
+import type { LedgerAggregate, LedgerPage, LedgerRepository } from '../application/ports/ledger-repository';
 import { WalletLedgerEntrySchema } from './wallet.entities';
 
 /**
@@ -52,6 +52,18 @@ export class MikroLedgerRepository implements LedgerRepository {
       balanceAfterCents: entry.balanceAfter.toCents().toString(),
       createdAt: entry.createdAt,
     });
+  }
+
+  async aggregateByWallet(walletId: string, em: EntityManager): Promise<LedgerAggregate> {
+    const rows = (await em.getConnection().execute(
+      `SELECT COALESCE(SUM(CASE WHEN direction = 'CREDIT' THEN amount_cents ELSE -amount_cents END), 0) AS sum_cents,
+              COUNT(*) AS entries
+         FROM wallet_ledger_entries
+        WHERE wallet_id = ?::uuid`,
+      [walletId],
+    )) as { sum_cents: string; entries: string }[];
+    const row = rows[0] ?? { sum_cents: '0', entries: '0' };
+    return { sumCents: BigInt(row.sum_cents), entries: Number.parseInt(row.entries, 10) };
   }
 
   async listByWallet(
