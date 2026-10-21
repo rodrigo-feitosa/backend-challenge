@@ -53,6 +53,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Containers ativos NESTE processo de teste — a varredura de órfãos os preserva. */
+const activeContainers = new Set<string>();
+
 /**
  * Inicia um container e espera o Docker reportá-lo em execução.
  * O readiness da aplicação (SQL, filas) deve ser feito pela suíte.
@@ -64,7 +67,11 @@ export async function startContainer(options: {
   internalPort: number;
   startTimeoutMs?: number;
 }): Promise<StartedContainer> {
+  // restos de execuções ANTERIORES (crash no meio de uma suíte) deixam
+  // containers órfãos que pressurizam a máquina — remove antes de subir
+  await removeOrphanTestContainers();
   const hostPort = await findFreePort();
+  activeContainers.add(options.name);
   const args = [
     'run', '-d', '--rm',
     '--name', options.name,
@@ -87,10 +94,12 @@ export async function startContainer(options: {
       return { containerId, hostPort, stop: () => stopContainer(options.name) };
     }
     if (status === 'exited' || status === 'dead') {
+      activeContainers.delete(options.name);
       throw new Error(`container ${options.name} saiu do ar (status=${status})`);
     }
     if (Date.now() - startedAt > timeout) {
       await stopContainer(options.name);
+      activeContainers.delete(options.name);
       throw new Error(`container ${options.name} não iniciou em ${timeout}ms (status=${status || 'unknown'})`);
     }
     await sleep(200);
@@ -98,9 +107,36 @@ export async function startContainer(options: {
 }
 
 export async function stopContainer(name: string): Promise<void> {
+  activeContainers.delete(name);
   try {
     await runDocker(['stop', name]); // --rm remove o container
   } catch {
     // container já parado
+  }
+}
+
+/**
+ * Remove containers de teste deixados por execuções ANTERIORES.
+ * Preserva os containers ativos deste processo (uma suíte pode subir o
+ * LocalStack com o Postgres dela ainda de pé). A remoção de containers de
+ * OUTROS processos é segura porque o bun test roda suítes sequencialmente
+ * nesta máquina.
+ */
+export async function removeOrphanTestContainers(): Promise<void> {
+  try {
+    const ids = await runDocker(['ps', '-aq', '--filter', 'name=wagering-test-']);
+    if (!ids) return;
+    for (const id of ids.split('\n').filter(Boolean)) {
+      let name = '';
+      try {
+        name = await runDocker(['inspect', '--format', '{{.Name}}', id]);
+      } catch {
+        continue; // sumiu sozinho
+      }
+      if (activeContainers.has(name.replace(/^\//, ''))) continue;
+      await runDocker(['rm', '-f', id]).catch(() => undefined);
+    }
+  } catch {
+    // docker indisponível: deixamos o erro real aparecer adiante
   }
 }

@@ -22,7 +22,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Espera o PostgreSQL aceitar SQL (sem child processes em loop). */
-async function waitForPostgres(clientUrl: string, timeoutMs = 30_000): Promise<void> {
+async function waitForPostgres(clientUrl: string, timeoutMs = 60_000): Promise<void> {
   const startedAt = Date.now();
   let lastError = '';
   while (Date.now() - startedAt < timeoutMs) {
