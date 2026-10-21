@@ -5,13 +5,14 @@ import { DomainExceptionFilter } from './shared/infrastructure/http/domain-excep
 import { RepositoriesModule } from './shared/infrastructure/repositories.module';
 import { SharedModule } from './shared/shared.module';
 import { SqsModule } from './messaging/infrastructure/sqs/sqs.module';
+import { MessagingModule } from './messaging/messaging.module';
 import { HealthModule } from './health/health.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { WageringModule } from './wagering/wagering.module';
 
 /**
- * Módulo raiz. Módulos de domínio (messaging, auth) são adicionados
- * conforme as etapas do IMPLEMENTACAO-ETAPAS.md.
+ * Módulo raiz. Módulos de domínio (auth) são adicionados conforme as
+ * etapas do IMPLEMENTACAO-ETAPAS.md.
  */
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { WageringModule } from './wagering/wagering.module';
     HealthModule,
     WageringModule,
     WalletsModule,
+    MessagingModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainExceptionFilter }],
 })

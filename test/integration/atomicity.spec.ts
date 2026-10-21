@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { MikroORM } from '@mikro-orm/core';
 import { MikroLedgerRepository } from '../../src/wallets/infrastructure/mikro-ledger.repository';
 import { MikroOutboxRepository } from '../../src/messaging/infrastructure/mikro-outbox.repository';
+import { MikroInboxRepository } from '../../src/messaging/infrastructure/mikro-inbox.repository';
 import { MikroWagerTransactionRepository } from '../../src/wagering/infrastructure/mikro-wager-transaction.repository';
 import { MikroWalletRepository } from '../../src/wallets/infrastructure/mikro-wallet.repository';
 import { SystemClock, UuidV7Generator } from '../../src/shared/infrastructure/id-clock.providers';
@@ -46,6 +47,7 @@ describe('atomicidade wallet+ledger+transação+outbox (I2)', () => {
       new MikroWagerTransactionRepository(),
       new MikroWalletRepository(),
       new MikroOutboxRepository(),
+      new MikroInboxRepository(),
       new UuidV7Generator(),
       new ThrowingClock(failAfter),
       orm.em.fork(),
@@ -166,6 +168,7 @@ describe('atomicidade wallet+ledger+transação+outbox (I2)', () => {
       new MikroWagerTransactionRepository(),
       new MikroWalletRepository(),
       new FailingOutboxRepository(),
+      new MikroInboxRepository(),
       new UuidV7Generator(),
       new SystemClock(),
       orm.em.fork(),

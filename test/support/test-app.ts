@@ -14,10 +14,14 @@ export interface TestApp {
   stop(): Promise<void>;
 }
 
-export async function startTestApp(): Promise<TestApp> {
+export async function startTestApp(env?: Record<string, string>): Promise<TestApp> {
   const db = await startTestDatabase();
   process.env.DATABASE_URL = `postgresql://test:test@127.0.0.1:${db.hostPort}/wagering_test`;
   process.env.MIGRATIONS_ON_START = 'false';
+  process.env.CONSUMER_ENABLED = 'false'; // default: sem consumer (habilitar via env)
+  for (const [key, value] of Object.entries(env ?? {})) {
+    process.env[key] = value;
+  }
   const app = await NestFactory.create(AppModule, { logger: ['error'] });
   configureApp(app);
   await app.listen(0);

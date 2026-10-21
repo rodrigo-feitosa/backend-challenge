@@ -88,9 +88,13 @@ export class WageringController {
         return {
           code: 'IDEMPOTENCY_CONFLICT',
           message: 'same Idempotency-Key with a different payload',
-          transactionId: result.transaction.id,
+          transactionId: result.transaction?.id ?? null,
           idempotentReplay: false,
         };
+      case 'DUPLICATE':
+        // inalcançável via HTTP (inbox é exclusiva do canal SQS); defensivo
+        res.status(HttpStatus.OK);
+        return { status: 'DUPLICATE', idempotentReplay: true };
     }
   }
 }
@@ -133,8 +137,8 @@ function toTransactionBody(tx: {
 
 function toBody(result: SubmitWagerResult): Record<string, unknown> {
   return {
-    transactionId: result.transaction.id,
-    status: result.transaction.status,
+    transactionId: result.transaction?.id ?? null,
+    status: result.transaction?.status ?? result.outcome,
     ...(result.balanceAfter ? { balance: result.balanceAfter.toJSON() } : {}),
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     idempotentReplay: result.idempotentReplay,

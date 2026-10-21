@@ -20,6 +20,8 @@ import { WagerTransactionProcessed } from '../../messaging/domain/events/wager-t
 import { WagerTransactionRejected } from '../../messaging/domain/events/wager-transaction-rejected';
 import { WagerTransactionPendingReference } from '../../messaging/domain/events/wager-transaction-pending-reference';
 import { WalletBalanceChanged } from '../../messaging/domain/events/wallet-balance-changed';
+import { InboxMessage } from '../../messaging/domain/inbox-message';
+import { INBOX_REPOSITORY, type InboxRepository } from '../../messaging/application/ports/inbox-repository';
 import {
   WAGER_TRANSACTION_REPOSITORY,
   type PendingReferenceSchedule,
@@ -44,14 +46,16 @@ export interface ExecutionContext {
   source: 'HTTP' | 'SQS';
   /** Correlação: header X-Correlation-ID (HTTP) ou messageId (SQS). */
   correlationId: string;
-  inboxMessageId?: string;
+  /** Presente no canal SQS: deduplicação persistente na mesma transação (§10). */
+  inbox?: { consumerName: string; messageId: string; payloadHash: string } | undefined;
 }
 
-export type SubmitOutcome = 'PROCESSED' | 'REJECTED' | 'PENDING_REFERENCE' | 'CONFLICT';
+export type SubmitOutcome = 'PROCESSED' | 'REJECTED' | 'PENDING_REFERENCE' | 'CONFLICT' | 'DUPLICATE';
 
 export interface SubmitWagerResult {
   outcome: SubmitOutcome;
-  transaction: WagerTransaction;
+  /** null para DUPLICATE (nenhum processamento novo ocorreu). */
+  transaction: WagerTransaction | null;
   /** Saldo após a operação (PROCESSED) ou snapshot original (replay, regra 7.7). */
   balanceAfter: Money | null;
   failureCode: FailureCode | null;
@@ -80,6 +84,7 @@ export class SubmitWagerTransactionUseCase {
     @Inject(WAGER_TRANSACTION_REPOSITORY) private readonly transactions: WagerTransactionRepository,
     @Inject(WALLET_REPOSITORY) private readonly wallets: WalletRepository,
     @Inject(OUTBOX_REPOSITORY) private readonly outbox: OutboxRepository,
+    @Inject(INBOX_REPOSITORY) private readonly inbox: InboxRepository,
     @Inject(ID_GENERATOR) private readonly ids: IdGeneratorPort,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ENTITY_MANAGER) private readonly em: EntityManager,
@@ -101,6 +106,29 @@ export class SubmitWagerTransactionUseCase {
     // fork por execução: um EntityManager não suporta transações concorrentes
     // (requisições simultâneas compartilhariam contexto e serializariam)
     return this.em.fork().transactional(async (tx) => {
+      // (0) canal SQS: deduplicação persistente NA MESMA transação (§10).
+      // Linha existe ⇒ mensagem já processada; rollback remove a linha.
+      if (context.inbox) {
+        const record = InboxMessage.receive({
+          id: this.ids.newId(),
+          messageId: context.inbox.messageId,
+          consumerName: context.inbox.consumerName,
+          payloadHash: context.inbox.payloadHash,
+          receivedAt: this.clock.now(),
+        });
+        record.markProcessed(this.clock.now()); // simplificação: "existe" ⇒ "processada"
+        try {
+          await tx.transactional(async (nested) => {
+            await this.inbox.insert(record, nested);
+          });
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            return { outcome: 'DUPLICATE' as const, transaction: null, balanceAfter: null, failureCode: null, idempotentReplay: true };
+          }
+          throw err;
+        }
+      }
+
       // (1) lock pessimista da wallet — a unidade de concorrência é a walletId
       const wallet = await this.wallets.lockById(command.walletId, tx);
 
@@ -430,6 +458,11 @@ function pendingRefBaseDelayMs(): number {
 }
 
 type UniqueViolation = { code?: string; constraint?: string; message?: string };
+
+/** Qualquer violação de UNIQUE (usado pela inbox). */
+function isUniqueViolation(err: unknown): boolean {
+  return (err as UniqueViolation)?.code === '23505';
+}
 
 function isIdempotencyUniqueViolation(err: unknown): boolean {
   const e = err as UniqueViolation;

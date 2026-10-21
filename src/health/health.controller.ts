@@ -8,7 +8,7 @@ import {
 import { MikroORM } from '@mikro-orm/core';
 import { GetQueueAttributesCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { MIKRO_ORM } from '../shared/infrastructure/database/database.module';
-import { SQS_CLIENT, sqsQueueUrls } from '../messaging/infrastructure/sqs/sqs.module';
+import { SQS_CLIENT, getSqsQueueUrls } from '../messaging/infrastructure/sqs/sqs.module';
 
 /**
  * Endpoints de saúde (seções 9 e 12 do desafio) — sem autenticação.
@@ -48,12 +48,12 @@ export class HealthController {
 
   private async checkSqs(): Promise<HealthIndicatorResult> {
     const session = this.healthIndicator.check('sqs');
-    if (!sqsQueueUrls.transactions) {
+    if (!getSqsQueueUrls().transactions) {
       return session.down({ message: 'SQS_QUEUE_TRANSACTIONS_URL not configured' });
     }
     try {
       await this.sqs.send(
-        new GetQueueAttributesCommand({ QueueUrl: sqsQueueUrls.transactions, AttributeNames: ['QueueArn'] }),
+        new GetQueueAttributesCommand({ QueueUrl: getSqsQueueUrls().transactions, AttributeNames: ['QueueArn'] }),
       );
       return session.up();
     } catch (err) {

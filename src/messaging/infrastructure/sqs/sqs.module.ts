@@ -3,11 +3,17 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 
 export const SQS_CLIENT = Symbol('SQS_CLIENT');
 
-export const sqsQueueUrls = {
-  transactions: process.env.SQS_QUEUE_TRANSACTIONS_URL ?? '',
-  dlq: process.env.SQS_QUEUE_DLQ_URL ?? '',
-  events: process.env.SQS_QUEUE_EVENTS_URL ?? '',
-};
+/**
+ * URLs das filas lidas no momento da chamada (não no import do módulo) —
+ * permite que testes apontem para o LocalStack da suíte.
+ */
+export function getSqsQueueUrls(): { transactions: string; dlq: string; events: string } {
+  return {
+    transactions: process.env.SQS_QUEUE_TRANSACTIONS_URL ?? '',
+    dlq: process.env.SQS_QUEUE_DLQ_URL ?? '',
+    events: process.env.SQS_QUEUE_EVENTS_URL ?? '',
+  };
+}
 
 /**
  * Módulo global do cliente SQS (ADR-001).
