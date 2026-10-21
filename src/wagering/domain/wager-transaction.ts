@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Money } from '../../shared/domain/money';
 import { LedgerDirection } from '../../wallets/domain/wallet-ledger-entry';
 import { InvalidTransactionStateError, InvalidWagerTransactionError } from './errors';
@@ -134,6 +135,43 @@ export class WagerTransaction {
       undefined,
       undefined,
       undefined,
+    );
+  }
+
+  /**
+   * Fábrica interna: OPENING é criado pelo OpenWalletUseCase (crédito de
+   * abertura da wallet) — nunca submetível por API ou fila. Nasce já
+   * PROCESSED, com provider 'internal' (restrição do schema).
+   */
+  static createOpening(props: {
+    id: string;
+    walletId: string;
+    playerId: string;
+    amount: Money;
+    createdAt: Date;
+  }): WagerTransaction {
+    const externalId = `opening:${props.walletId}`;
+    const payloadHash = createHash('sha256')
+      .update(`OPENING|${props.walletId}|${props.amount.toCents()}|${props.amount.currency}`, 'utf8')
+      .digest('hex');
+    return new WagerTransaction(
+      props.id,
+      'internal',
+      externalId,
+      externalId,
+      payloadHash,
+      props.walletId,
+      props.playerId,
+      '', // OPENING não pertence a uma rodada
+      '', // nem a um jogo
+      WagerTransactionKind.Opening,
+      props.amount,
+      undefined,
+      props.createdAt,
+      WagerTransactionStatus.Processed,
+      undefined,
+      undefined,
+      props.createdAt,
     );
   }
 

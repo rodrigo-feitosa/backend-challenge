@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { type EntityManager } from '@mikro-orm/core';
 import { Money } from '../../shared/domain/money';
 import { LedgerDirection, WalletLedgerEntry } from '../domain/wallet-ledger-entry';
+import { WagerTransaction } from '../../wagering/domain/wager-transaction';
 import { WalletAlreadyExistsError } from '../domain/errors';
 import { Wallet } from '../domain/wallet';
 import { LEDGER_REPOSITORY, type LedgerRepository } from './ports/ledger-repository';
@@ -65,43 +65,21 @@ export class OpenWalletUseCase {
 
   private async insertOpening(wallet: Wallet, initialBalance: Money, tx: EntityManager): Promise<void> {
     const now = this.clock.now();
-    const openingId = this.ids.newId();
-    const entryId = this.ids.newId();
-    const cents = initialBalance.toCents().toString();
+    const opening = WagerTransaction.createOpening({
+      id: this.ids.newId(),
+      walletId: wallet.id,
+      playerId: wallet.playerId,
+      amount: initialBalance,
+      createdAt: now,
+    });
 
-    await this.transactionRepository.insert(
-      {
-        id: openingId,
-        providerId: 'internal',
-        externalTransactionId: `opening:${wallet.id}`,
-        idempotencyKey: `opening:${wallet.id}`,
-        payloadHash: sha256(`OPENING|${wallet.id}|${cents}|${initialBalance.currency}`),
-        walletId: wallet.id,
-        playerId: wallet.playerId,
-        roundId: '',
-        gameId: '',
-        kind: 'OPENING',
-        status: 'PROCESSED',
-        amountCents: cents,
-        currency: initialBalance.currency,
-        referenceExternalTxId: null,
-        referenceTransactionId: null,
-        balanceAfterCents: cents,
-        balanceAfterCurrency: initialBalance.currency,
-        failureCode: null,
-        pendingReferenceAttempts: 0,
-        pendingReferenceNextRetryAt: null,
-        createdAt: now,
-        processedAt: now,
-      },
-      tx,
-    );
+    await this.transactionRepository.insert(opening, tx, initialBalance);
 
     await this.ledgerRepository.insert(
       WalletLedgerEntry.create({
-        id: entryId,
+        id: this.ids.newId(),
         walletId: wallet.id,
-        transactionId: openingId,
+        transactionId: opening.id,
         direction: LedgerDirection.Credit,
         money: initialBalance,
         balanceBefore: Money.zero(initialBalance.currency),
@@ -114,10 +92,6 @@ export class OpenWalletUseCase {
 }
 
 /** Interpretação documentada (§16.3 do plano): OPENING não incrementa version — wallet nasce em 1. */
-
-function sha256(input: string): string {
-  return createHash('sha256').update(input, 'utf8').digest('hex');
-}
 
 type UniqueViolation = { code?: string; constraint?: string; message?: string };
 
