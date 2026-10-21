@@ -19,6 +19,7 @@ export async function startTestApp(env?: Record<string, string>): Promise<TestAp
   process.env.DATABASE_URL = `postgresql://test:test@127.0.0.1:${db.hostPort}/wagering_test`;
   process.env.MIGRATIONS_ON_START = 'false';
   process.env.CONSUMER_ENABLED = 'false'; // default: sem consumer (habilitar via env)
+  process.env.WORKERS_ENABLED = 'false'; // default: sem workers (habilitar via env)
   for (const [key, value] of Object.entries(env ?? {})) {
     process.env[key] = value;
   }

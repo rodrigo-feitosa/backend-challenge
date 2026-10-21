@@ -1,4 +1,4 @@
-import type { EntityManager } from '@mikro-orm/core';
+import { LockMode, type EntityManager } from '@mikro-orm/core';
 import { Money } from '../../shared/domain/money';
 import type { PendingReferenceSchedule, WagerTransactionRepository } from '../application/ports/wager-transaction-repository';
 import {
@@ -77,6 +77,48 @@ export class MikroWagerTransactionRepository implements WagerTransactionReposito
     );
     if (!row?.balanceAfterCents || !row.balanceAfterCurrency) return null;
     return Money.fromCents(row.balanceAfterCents, row.balanceAfterCurrency);
+  }
+
+  async findPendingReferenceDue(limit: number, em: EntityManager): Promise<WagerTransaction[]> {
+    const rows = (await em.getConnection().execute(
+      `SELECT id FROM wager_transactions
+        WHERE status = 'PENDING_REFERENCE'
+          AND pending_reference_next_retry_at <= now()
+        ORDER BY pending_reference_next_retry_at
+        LIMIT ?`,
+      [limit],
+    )) as { id: string }[];
+    const transactions: WagerTransaction[] = [];
+    for (const row of rows) {
+      const tx = await em.findOne(WagerTransactionSchema, { id: row.id });
+      if (tx) transactions.push(this.toDomain(tx));
+    }
+    return transactions;
+  }
+
+  async lockById(id: string, em: EntityManager): Promise<WagerTransaction | null> {
+    const row = await em.findOne(WagerTransactionSchema, { id }, { lockMode: LockMode.PESSIMISTIC_WRITE });
+    return row ? this.toDomain(row) : null;
+  }
+
+  async incrementPendingReferenceAttempt(id: string, em: EntityManager): Promise<number | null> {
+    const rows = (await em.getConnection().execute(
+      `UPDATE wager_transactions
+          SET pending_reference_attempts = pending_reference_attempts + 1
+        WHERE id = ?::uuid AND status = 'PENDING_REFERENCE'
+        RETURNING pending_reference_attempts`,
+      [id],
+    )) as { pending_reference_attempts: number }[];
+    const row = rows[0];
+    return row ? Number(row.pending_reference_attempts) : null;
+  }
+
+  async schedulePendingReferenceRetry(id: string, nextRetryAt: Date, em: EntityManager): Promise<void> {
+    await em.nativeUpdate(
+      WagerTransactionSchema,
+      { id },
+      { pendingReferenceNextRetryAt: nextRetryAt },
+    );
   }
 
   private toRow(tx: WagerTransaction, balanceSnapshot: Money | undefined, schedule: PendingReferenceSchedule | undefined) {

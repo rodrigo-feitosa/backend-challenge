@@ -39,4 +39,16 @@ export interface WagerTransactionRepository {
 
   /** Snapshot de saldo no momento do processamento (regra 7.7, replay). */
   readBalanceSnapshot(transactionId: string, em: EntityManager): Promise<Money | null>;
+
+  /** Transações PENDING_REFERENCE vencidas para o worker (7.1) — sem lock. */
+  findPendingReferenceDue(limit: number, em: EntityManager): Promise<WagerTransaction[]>;
+
+  /** Lock pessimista na transação (worker de pendências entre instâncias). */
+  lockById(id: string, em: EntityManager): Promise<WagerTransaction | null>;
+
+  /** Incremento atômico do contador de tentativas; null se não estiver mais PENDING_REFERENCE. */
+  incrementPendingReferenceAttempt(id: string, em: EntityManager): Promise<number | null>;
+
+  /** Agenda a próxima tentativa do worker (backoff). */
+  schedulePendingReferenceRetry(id: string, nextRetryAt: Date, em: EntityManager): Promise<void>;
 }

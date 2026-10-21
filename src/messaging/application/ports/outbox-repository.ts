@@ -11,4 +11,15 @@ export const OUTBOX_REPOSITORY = Symbol('OUTBOX_REPOSITORY');
 export interface OutboxRepository {
   enqueue(message: OutboxMessage, em: EntityManager): Promise<void>;
   enqueueMany(messages: OutboxMessage[], em: EntityManager): Promise<void>;
+
+  /**
+   * Reivindica mensagens pendentes e vencidas com FOR UPDATE SKIP LOCKED —
+   * publishers concorrentes não processam a mesma mensagem e não bloqueiam
+   * uns aos outros (ADR-005). As locks valem enquanto a transação estiver aberta.
+   */
+  claimPending(limit: number, em: EntityManager): Promise<OutboxMessage[]>;
+
+  lockById(id: string, em: EntityManager): Promise<OutboxMessage | null>;
+
+  update(message: OutboxMessage, em: EntityManager): Promise<void>;
 }

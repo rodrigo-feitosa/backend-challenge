@@ -279,12 +279,13 @@ export class SubmitWagerTransactionUseCase {
     tx: EntityManager,
     transaction: WagerTransaction,
     correlationId: string,
+    options: { reschedule?: boolean } = {},
   ): Promise<{ outcome: 'ok'; reference: WagerTransaction } | { outcome: 'pending'; result: SubmitWagerResult }> {
     const refExternalId = transaction.referenceExternalTransactionId as string;
     const reference = await this.transactions.findReference(transaction.providerId, refExternalId, tx);
     if (!reference || reference.status !== WagerTransactionStatus.Processed) {
       // ausente ou não-PROCESSADA → PENDING_REFERENCE (regra 7.8)
-      return { outcome: 'pending', result: await this.pendReference(tx, transaction, correlationId) };
+      return { outcome: 'pending', result: await this.pendReference(tx, transaction, correlationId, options.reschedule !== false) };
     }
     if (!isReferenceKindAllowed(transaction.kind, reference.kind)) {
       return {
@@ -327,15 +328,59 @@ export class SubmitWagerTransactionUseCase {
     return { outcome: 'ok', reference };
   }
 
-  private async pendReference(tx: EntityManager, transaction: WagerTransaction, correlationId: string): Promise<SubmitWagerResult> {
+  private async pendReference(
+    tx: EntityManager,
+    transaction: WagerTransaction,
+    correlationId: string,
+    reschedule: boolean,
+  ): Promise<SubmitWagerResult> {
     transaction.markPendingReference();
-    const schedule: PendingReferenceSchedule = {
-      attempts: 1,
-      nextRetryAt: new Date(this.clock.now().getTime() + pendingRefBaseDelayMs()),
-    };
-    await this.transactions.update(transaction, tx, { pendingReferenceSchedule: schedule });
-    await this.emit(tx, WagerTransactionPendingReference.from(transaction, schedule, this.eventCtx(correlationId, transaction)));
+    if (reschedule) {
+      const schedule: PendingReferenceSchedule = {
+        attempts: 1,
+        nextRetryAt: new Date(this.clock.now().getTime() + pendingRefBaseDelayMs()),
+      };
+      await this.transactions.update(transaction, tx, { pendingReferenceSchedule: schedule });
+      await this.emit(tx, WagerTransactionPendingReference.from(transaction, schedule, this.eventCtx(correlationId, transaction)));
+    }
+    // retry do worker (reschedule=false): sem evento e sem reset do agendamento —
+    // o worker é dono de attempts/next_retry_at
     return { outcome: 'PENDING_REFERENCE', transaction, balanceAfter: null, failureCode: null, idempotentReplay: false };
+  }
+
+  /**
+   * Reprocessamento de uma PENDING_REFERENCE pelo worker (7.1).
+   * Reexecuta apenas a resolução/aplicação — a contagem de tentativas e o
+   * agendamento são responsabilidade do worker.
+   */
+  async retryPendingReference(transactionId: string, correlationId: string): Promise<SubmitWagerResult> {
+    return this.em.fork().transactional(async (tx) => {
+      const transaction = await this.transactions.lockById(transactionId, tx);
+      if (!transaction || transaction.status !== WagerTransactionStatus.PendingReference) {
+        // outra instância já tratou
+        return { outcome: 'PROCESSED', transaction, balanceAfter: null, failureCode: null, idempotentReplay: true };
+      }
+      const wallet = await this.wallets.lockById(transaction.walletId, tx);
+      if (!wallet) {
+        throw new DomainError('INFRASTRUCTURE_ERROR', `wallet ${transaction.walletId} disappeared for pending reference ${transactionId}`);
+      }
+      const resolved = await this.resolveReference(tx, transaction, correlationId, { reschedule: false });
+      if (resolved.outcome === 'pending') {
+        return resolved.result;
+      }
+      return this.apply(tx, wallet, transaction, resolved.reference, correlationId);
+    });
+  }
+
+  /** Esgotadas as tentativas/TTL (7.1): rejeição terminal com REFERENCE_NOT_FOUND. */
+  async rejectPendingReference(transactionId: string, correlationId: string): Promise<void> {
+    await this.em.fork().transactional(async (tx) => {
+      const transaction = await this.transactions.lockById(transactionId, tx);
+      if (!transaction || transaction.status !== WagerTransactionStatus.PendingReference) {
+        return; // outra instância já tratou
+      }
+      await this.reject(tx, transaction, FailureCode.ReferenceNotFound, 'reference not found within retry budget', correlationId);
+    });
   }
 
   // ---- rejeição e aplicação ------------------------------------------------

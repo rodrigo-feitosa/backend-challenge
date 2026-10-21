@@ -112,6 +112,7 @@ function toTransactionBody(tx: {
   status: string;
   money: { toJSON(): { amount: string; currency: string } };
   referenceExternalTransactionId?: string | undefined;
+  referenceTransactionId?: string | undefined;
   failureCode?: string | undefined;
   createdAt: Date;
   processedAt?: Date | undefined;
@@ -129,6 +130,7 @@ function toTransactionBody(tx: {
     status: tx.status,
     amount: tx.money.toJSON(),
     referenceExternalTransactionId: tx.referenceExternalTransactionId ?? null,
+    referenceTransactionId: tx.referenceTransactionId ?? null,
     failureCode: tx.failureCode ?? null,
     createdAt: tx.createdAt.toISOString(),
     processedAt: tx.processedAt ? tx.processedAt.toISOString() : null,
