@@ -5,6 +5,7 @@ import { CLOCK, type ClockPort } from '../../../shared/application/ports/clock-p
 import { ENTITY_MANAGER } from '../../../shared/infrastructure/database/database.module';
 import { WAGER_TRANSACTION_REPOSITORY, type WagerTransactionRepository } from '../ports/wager-transaction-repository';
 import { SubmitWagerTransactionUseCase } from '../submit-wager-transaction.use-case';
+import { metrics } from '../../../shared/infrastructure/metrics/metrics';
 
 const log = createLogger('pending-reference');
 
@@ -83,6 +84,7 @@ export class PendingReferenceWorker implements OnModuleInit, OnApplicationShutdo
       // ainda pendente: contabiliza tentativa e agenda/limita
       const attempts = await this.transactions.incrementPendingReferenceAttempt(transactionId, this.em.fork());
       if (attempts === null) return; // deixou de ser PENDING_REFERENCE nesse meio-tempo
+      metrics.incRetry('pending_reference');
 
       const maxAttempts = envInt('PENDING_REF_MAX_ATTEMPTS', 10);
       const ttlMs = envInt('PENDING_REF_TTL_HOURS', 24) * 3_600_000;

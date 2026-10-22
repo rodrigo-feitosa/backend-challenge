@@ -9,6 +9,7 @@ import {
 import { SQS_CLIENT, getSqsQueueUrls } from './sqs/sqs.module';
 import { ConsumeWagerTransactionHandler, classifyConsumerError } from '../application/consume-wager-transaction.handler';
 import { createLogger } from '../../shared/infrastructure/logging/logger';
+import { metrics } from '../../shared/infrastructure/metrics/metrics';
 
 const log = createLogger('sqs-consumer');
 
@@ -113,6 +114,7 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
     } catch (err) {
       const classification = classifyConsumerError(err);
       if (classification === 'transient' && receiveCount < envInt('DLQ_MAX_RECEIVES', 3)) {
+        metrics.incRetry('consumer_redelivery');
         log.warn({ messageId, receiveCount, err: err instanceof Error ? err.message : err }, 'transient failure; message returns to queue (no ack)');
         return; // sem ack → visibility timeout devolve a mensagem
       }
@@ -136,6 +138,7 @@ export class SqsWagerConsumer implements OnModuleInit, OnApplicationShutdown {
       log.error({ messageId }, 'DLQ not configured; message will redrive via queue policy');
       return;
     }
+    metrics.incDlq();
     await this.sqs.send(
       new SendMessageCommand({
         QueueUrl: dlqUrl,

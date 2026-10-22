@@ -5,6 +5,7 @@ import { CLOCK, type ClockPort } from '../../../shared/application/ports/clock-p
 import { ENTITY_MANAGER } from '../../../shared/infrastructure/database/database.module';
 import { EVENT_PUBLISHER, type EventPublisherPort } from '../ports/event-publisher';
 import { OUTBOX_REPOSITORY, type OutboxRepository } from '../ports/outbox-repository';
+import { metrics } from '../../../shared/infrastructure/metrics/metrics';
 
 const log = createLogger('outbox-publisher');
 
@@ -63,10 +64,25 @@ export class OutboxPublisherWorker implements OnModuleInit, OnApplicationShutdow
   private async tick(): Promise<void> {
     if (!this.running) return;
     try {
+      await this.updateOutboxGauges();
       const published = await this.publishBatch(envInt('OUTBOX_BATCH_SIZE', 50));
       if (published > 0) log.debug({ published }, 'outbox batch published');
     } catch (err) {
       log.error({ err: err instanceof Error ? err.message : err }, 'outbox publish failed');
+    }
+  }
+
+  /** Gauges de atraso: idade da mensagem PENDING mais antiga e backlog. */
+  private async updateOutboxGauges(): Promise<void> {
+    try {
+      const rows = (await this.em.fork().getConnection().execute(
+        `SELECT COUNT(*) AS n, COALESCE(EXTRACT(EPOCH FROM (now() - MIN(occurred_at))), 0) AS lag
+         FROM outbox_messages WHERE status = 'PENDING'`,
+      )) as { n: string; lag: string }[];
+      metrics.setOutboxLag(Number(rows[0]?.lag ?? 0));
+      metrics.setOutboxPending(Number(rows[0]?.n ?? 0));
+    } catch {
+      // gauges são best-effort: falha de leitura não pode parar a publicação
     }
   }
 
@@ -114,9 +130,11 @@ export class OutboxPublisherWorker implements OnModuleInit, OnApplicationShutdow
       for (const id of ids) {
         const message = await this.outbox.lockById(id, tx);
         if (!message || !message.isPending()) continue;
+        metrics.incRetry('outbox_publish');
         message.scheduleRetry(this.clock.now());
         if (message.attempts >= maxAttempts) {
           message.markDead();
+          metrics.incOutboxDead();
           log.error({ messageId: message.id, attempts: message.attempts }, 'outbox message moved to DEAD');
         }
         await this.outbox.update(message, tx);

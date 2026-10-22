@@ -7,6 +7,7 @@ import { SharedModule } from './shared/shared.module';
 import { SqsModule } from './messaging/infrastructure/sqs/sqs.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { HealthModule } from './health/health.module';
+import { MetricsModule } from './shared/infrastructure/metrics/metrics.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { WageringModule } from './wagering/wagering.module';
 
@@ -21,6 +22,7 @@ import { WageringModule } from './wagering/wagering.module';
     RepositoriesModule,
     SqsModule,
     HealthModule,
+    MetricsModule,
     WageringModule,
     WalletsModule,
     MessagingModule,

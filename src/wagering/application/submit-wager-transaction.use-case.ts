@@ -22,11 +22,16 @@ import { WagerTransactionPendingReference } from '../../messaging/domain/events/
 import { WalletBalanceChanged } from '../../messaging/domain/events/wallet-balance-changed';
 import { InboxMessage } from '../../messaging/domain/inbox-message';
 import { INBOX_REPOSITORY, type InboxRepository } from '../../messaging/application/ports/inbox-repository';
+import { createLogger } from '../../shared/infrastructure/logging/logger';
+import { runWithCorrelation, updateCorrelation } from '../../shared/infrastructure/logging/correlation';
+import { metrics } from '../../shared/infrastructure/metrics/metrics';
 import {
   WAGER_TRANSACTION_REPOSITORY,
   type PendingReferenceSchedule,
   type WagerTransactionRepository,
 } from './ports/wager-transaction-repository';
+
+const log = createLogger('submit-wager');
 
 export interface SubmitWagerCommand {
   providerId: string;
@@ -102,10 +107,38 @@ export class SubmitWagerTransactionUseCase {
       money: command.money.toJSON(),
     });
     const correlationId = context.correlationId || this.ids.newId();
+    const channel = context.source.toLowerCase();
+    const startedAt = Date.now();
 
-    // fork por execução: um EntityManager não suporta transações concorrentes
-    // (requisições simultâneas compartilhariam contexto e serializariam)
-    return this.em.fork().transactional(async (tx) => {
+    // todo log daqui pra baixo carrega os identificadores automaticamente
+    return runWithCorrelation(
+      { correlationId, providerId: command.providerId, walletId: command.walletId, messageId: context.inbox?.messageId },
+      async () => {
+        try {
+          const result = await this.em.fork().transactional(async (tx) => {
+            const outcome = await this.process(command, context, payloadHash, correlationId, tx);
+            updateCorrelation({ transactionId: outcome.transaction?.id });
+            return outcome;
+          });
+          metrics.incTransaction(result.outcome, command.providerId, command.kind);
+          if (result.outcome === 'DUPLICATE' || result.idempotentReplay) {
+            metrics.incDuplicate(channel);
+          }
+          return result;
+        } finally {
+          metrics.observeProcessingLatency(channel, (Date.now() - startedAt) / 1000);
+        }
+      },
+    );
+  }
+
+  private async process(
+    command: SubmitWagerCommand,
+    context: ExecutionContext,
+    payloadHash: string,
+    correlationId: string,
+    tx: EntityManager,
+  ): Promise<SubmitWagerResult> {
       // (0) canal SQS: deduplicação persistente NA MESMA transação (§10).
       // Linha existe ⇒ mensagem já processada; rollback remove a linha.
       if (context.inbox) {
@@ -130,7 +163,9 @@ export class SubmitWagerTransactionUseCase {
       }
 
       // (1) lock pessimista da wallet — a unidade de concorrência é a walletId
+      const lockStartedAt = Date.now();
       const wallet = await this.wallets.lockById(command.walletId, tx);
+      metrics.observeLockWait((Date.now() - lockStartedAt) / 1000);
 
       // wallet inexistente: a FK impede persistir a transação; a rejeição é
       // determinística (retry devolve o mesmo resultado). Interpretação
@@ -175,6 +210,7 @@ export class SubmitWagerTransactionUseCase {
         referenceExternalTransactionId: command.referenceExternalTransactionId,
         createdAt: this.clock.now(),
       });
+      updateCorrelation({ transactionId: transaction.id });
       try {
         await tx.transactional(async (nested) => {
           await this.transactions.insert(transaction, nested);
@@ -218,7 +254,6 @@ export class SubmitWagerTransactionUseCase {
 
       // (5-7) aplicação + persistência + eventos
       return this.apply(tx, wallet, transaction, reference, correlationId);
-    });
   }
 
   // ---- idempotência -------------------------------------------------------
@@ -389,9 +424,20 @@ export class SubmitWagerTransactionUseCase {
     tx: EntityManager,
     transaction: WagerTransaction,
     code: FailureCode,
-    _reason: string, // detalhe humano do motivo — logado na ET15 (observabilidade)
+    _reason: string, // NÃO logado: motivos podem conter valores financeiros [S12];
+    // a causa fica registrada pelo failureCode (máquina) e pelo evento
     correlationId: string,
   ): Promise<SubmitWagerResult> {
+    log.warn(
+      {
+        transactionId: transaction.id,
+        walletId: transaction.walletId,
+        providerId: transaction.providerId,
+        kind: transaction.kind,
+        failureCode: code,
+      },
+      'transaction rejected',
+    );
     transaction.reject(code);
     await this.transactions.update(transaction, tx);
     await this.emit(tx, WagerTransactionRejected.from(transaction, this.eventCtx(correlationId, transaction)));
@@ -442,7 +488,14 @@ export class SubmitWagerTransactionUseCase {
     // saldo + ledger na MESMA transação (invariante §6.2); CAS como segunda
     // barreira de concorrência (ADR-003): só aplica se o saldo no banco
     // ainda for o que lemos sob o lock
-    await this.wallets.update(wallet, tx, { expectedBalanceCents: entry.balanceBefore.toCents() });
+    try {
+      await this.wallets.update(wallet, tx, { expectedBalanceCents: entry.balanceBefore.toCents() });
+    } catch (err) {
+      if (err instanceof DomainError && err.message.includes('CAS mismatch')) {
+        metrics.incLockConflict();
+      }
+      throw err;
+    }
 
     transaction.markProcessed(reference?.id, this.clock.now());
     await this.transactions.update(transaction, tx, { balanceSnapshot: wallet.balance });

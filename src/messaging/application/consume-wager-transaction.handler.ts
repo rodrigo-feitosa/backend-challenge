@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { Message } from '@aws-sdk/client-sqs';
 import { DomainError } from '../../shared/domain/errors';
 import { Money } from '../../shared/domain/money';
+import { runWithCorrelation } from '../../shared/infrastructure/logging/correlation';
 import { WagerTransactionKind } from '../../wagering/domain/wager-transaction';
 import { SubmitWagerTransactionUseCase, type SubmitWagerCommand } from '../../wagering/application/submit-wager-transaction.use-case';
 
@@ -87,15 +88,20 @@ export class ConsumeWagerTransactionHandler {
 
     const command = this.toCommand(data);
     const messageId = (typeof envelope.messageId === 'string' && envelope.messageId !== '' ? envelope.messageId : message.MessageId) ?? 'unknown';
-    await this.submit.execute(command, {
-      source: 'SQS',
-      correlationId: messageId,
-      inbox: {
-        consumerName: CONSUMER_NAME,
-        messageId,
-        payloadHash: createHash('sha256').update(body, 'utf8').digest('hex'),
-      },
-    });
+    // todo log do processamento desta mensagem carrega os identificadores
+    return runWithCorrelation(
+      { correlationId: messageId, messageId, providerId: command.providerId, walletId: command.walletId },
+      () =>
+        this.submit.execute(command, {
+          source: 'SQS',
+          correlationId: messageId,
+          inbox: {
+            consumerName: CONSUMER_NAME,
+            messageId,
+            payloadHash: createHash('sha256').update(body, 'utf8').digest('hex'),
+          },
+        }),
+    ).then(() => undefined);
   }
 
   private toCommand(data: Record<string, unknown>): SubmitWagerCommand {

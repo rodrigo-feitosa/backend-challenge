@@ -1,19 +1,32 @@
 import { type LoggerService } from '@nestjs/common';
-import { pino } from 'pino';
+import { pino, type DestinationStream } from 'pino';
+import { correlationBindings } from './correlation';
 
 /**
  * Logger estruturado JSON (requisito da seção 12 do desafio).
- * CorrelationId/messageId/transactionId/walletId/providerId são anexados
- * por binding contextual (`logger.child({...})`) nos módulos de domínio.
+ * Os bindings de correlação (correlationId, messageId, transactionId,
+ * walletId, providerId) são injetados automaticamente em TODA linha de log
+ * via mixin + AsyncLocalStorage — nenhum código de domínio precisa propagar.
  */
-export const rootLogger = pino({
-  level: process.env.LOG_LEVEL ?? 'info',
-  base: { service: 'wagering-processor' },
-  timestamp: pino.stdTimeFunctions.isoTime,
-  formatters: {
-    level: (label) => ({ level: label }),
-  },
-});
+export function buildLogger(destination?: DestinationStream) {
+  return pino(
+    {
+      level: process.env.LOG_LEVEL ?? 'info',
+      base: { service: 'wagering-processor' },
+      timestamp: pino.stdTimeFunctions.isoTime,
+      formatters: {
+        level: (label) => ({ level: label }),
+      },
+      mixin: (mergeContext) => {
+        const bindings = correlationBindings();
+        return bindings ? { ...bindings, ...mergeContext } : mergeContext;
+      },
+    },
+    destination,
+  );
+}
+
+export const rootLogger = buildLogger();
 
 export function createLogger(scope: string) {
   return rootLogger.child({ scope });

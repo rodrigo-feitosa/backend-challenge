@@ -3,6 +3,7 @@ import { type EntityManager } from '@mikro-orm/core';
 import { Money, type MoneyProps } from '../../shared/domain/money';
 import { NotFoundError } from '../../shared/domain/errors';
 import { createLogger } from '../../shared/infrastructure/logging/logger';
+import { metrics } from '../../shared/infrastructure/metrics/metrics';
 import { WALLET_REPOSITORY, type WalletRepository } from './ports/wallet-repository';
 import { LEDGER_REPOSITORY, type LedgerRepository } from './ports/ledger-repository';
 import { ENTITY_MANAGER } from '../../shared/infrastructure/database/database.module';
@@ -49,7 +50,7 @@ export class ReconcileWalletUseCase {
     const consistent = difference.isZero();
 
     if (!consistent) {
-      // métrica wallet_reconciliation_divergences_total na ET15
+      metrics.incReconciliationDivergence();
       log.warn(
         {
           walletId,
