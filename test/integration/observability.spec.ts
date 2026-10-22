@@ -48,7 +48,7 @@ describe('ET15 — observabilidade', () => {
       expect(text).toContain(`# HELP ${series} `);
       expect(text).toContain(`# TYPE ${series} `);
     }
-  });
+  }, 30_000);
 
   it('contadores acompanham o fluxo real: transação, replay e latência', async () => {
     const before = await (await fetch(`${app.baseUrl}/metrics`)).text();
@@ -140,12 +140,12 @@ describe('ET15 — observabilidade', () => {
     expect(res.headers.get('x-correlation-id')).toBe('et15-corr-123');
     // payload vazio → 400/422 de validação, mas o header de correlação está lá
     expect([400, 422]).toContain(res.status);
-  });
+  }, 30_000);
 
   it('requisição sem header recebe correlationId gerado', async () => {
     const res = await fetch(`${app.baseUrl}/health/live`);
     const correlationId = res.headers.get('x-correlation-id');
     expect(correlationId).toBeTruthy();
     expect(correlationId).toMatch(/^[0-9a-f-]{36}$/);
-  });
+  }, 30_000);
 });

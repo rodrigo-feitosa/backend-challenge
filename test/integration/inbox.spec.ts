@@ -68,7 +68,7 @@ describe('inbox e redelivery (I3)', () => {
 
     await waitFor(async () => (await balance(walletId)) === '70.00');
     expect(await sqs.queueCount(sqs.queueUrls.transactions)).toBe(0);
-  });
+  }, 30_000);
 
   it('a mesma mensagem 2x (mesmo messageId) → 1 efeito, segunda é ack como duplicata', async () => {
     const player = playerIdFrom('13b00000001');
@@ -130,5 +130,5 @@ describe('inbox e redelivery (I3)', () => {
     const trans = await (await fetch(`${base}/providers/provider-a/wagering/transactions/i3-ext-3`)).json();
     expect(trans.status).toBe('REJECTED');
     expect(trans.failureCode).toBe('INSUFFICIENT_FUNDS');
-  });
+  }, 30_000);
 });

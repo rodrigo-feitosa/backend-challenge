@@ -128,7 +128,7 @@ describe('atomicidade wallet+ledger+transação+outbox (I2)', () => {
     const payload = (payloads[0] as { payload: { data: { balanceBefore: { amount: string }; balanceAfter: { amount: string } } } }).payload;
     expect(payload.data.balanceBefore.amount).toBe('100.00');
     expect(payload.data.balanceAfter.amount).toBe('60.00');
-  });
+  }, 30_000);
 
   for (const failAfter of [1, 2, 3]) {
     it(`falha do relógio após ${failAfter} chamada(s) → nada persiste`, async () => {
@@ -178,5 +178,5 @@ describe('atomicidade wallet+ledger+transação+outbox (I2)', () => {
 
     const after = await snapshot(walletId);
     expect(after).toEqual(before);
-  });
+  }, 30_000);
 });

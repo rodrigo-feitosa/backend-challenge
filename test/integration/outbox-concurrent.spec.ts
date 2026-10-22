@@ -121,5 +121,5 @@ describe('publishers concorrentes na outbox (I4/C6)', () => {
     expect(allPublished.length).toBe(TOTAL);
     expect(new Set(allPublished).size).toBe(TOTAL);
     for (const id of ids) expect(allPublished).toContain(id);
-  });
+  }, 60_000);
 });

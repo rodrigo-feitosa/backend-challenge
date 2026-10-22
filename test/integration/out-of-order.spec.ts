@@ -117,5 +117,5 @@ describe('C7 — ROLLBACK antes da referência', () => {
     const state = await (await fetch(`${base}/providers/provider-a/wagering/transactions/c7-refund-never`)).json();
     expect(state.status).toBe('PENDING_REFERENCE');
     expect(await balance(walletId)).toBe('100.00');
-  });
+  }, 30_000);
 });

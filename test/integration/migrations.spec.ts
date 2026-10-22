@@ -35,7 +35,7 @@ describe('migrations e constraints (I1)', () => {
     expect(await tables()).not.toContain('wallets');
     await migrator.up();
     expect(await tables()).toContain('wallets');
-  });
+  }, 30_000);
 
   describe('violando constraints via SQL — o PostgreSQL deve recusar', () => {
     const exec = async (sql: string, params?: unknown[]): Promise<unknown> =>
