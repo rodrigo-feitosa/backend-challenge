@@ -11,5 +11,5 @@ COPY scripts ./scripts
 
 EXPOSE 3000
 
-# Migrations são aplicadas no start do app (idempotentes) — ver main.ts (ET4).
+# Migrations são aplicadas no start do app (idempotentes).
 CMD ["bun", "src/main.ts"]

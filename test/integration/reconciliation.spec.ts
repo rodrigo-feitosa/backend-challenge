@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { createWallet, playerIdFrom, startTestApp, submitTransaction, type TestApp } from '../support/test-app';
 
 /**
- * ET9: consultas por id/provedor e reconciliação com relatório honesto.
+ * Consultas por id/provedor e reconciliação com relatório honesto.
  */
-describe('queries and reconciliation (ET9)', () => {
+describe('queries and reconciliation', () => {
   let testApp: TestApp;
   let base: string;
 

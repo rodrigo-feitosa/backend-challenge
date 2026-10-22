@@ -19,7 +19,7 @@ export function getMikroOrmConfig() {
     clientUrl: process.env.DATABASE_URL ?? 'postgresql://app:app@localhost:5432/wagering',
     connect: false,
     debug: process.env.LOG_LEVEL === 'debug',
-    discovery: { warnWhenNoEntities: false }, // temporário — ET4 registra as entidades reais
+    discovery: { warnWhenNoEntities: false }, // evita ruído se a lista de entidades mudar de ordem
     pool: {
       min: 2,
       max: 20,

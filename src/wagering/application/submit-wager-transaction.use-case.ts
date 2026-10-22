@@ -81,7 +81,7 @@ export interface SubmitWagerResult {
  *     presente → valida kind, pertencimento, valor e dupla reversão;
  *  5. aplica: wallet.debit/credit (LOSS não move saldo) → ledger na mesma tx;
  *  6. markProcessed + snapshot de saldo (regra 7.7);
- *  7. eventos coletados no DomainEventCollector (outbox na ET10).
+ *  7. eventos gravados na outbox na mesma transação.
  */
 @Injectable()
 export class SubmitWagerTransactionUseCase {

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { createWallet, playerIdFrom, startTestApp, submitTransaction, type TestApp } from '../support/test-app';
 
 /**
- * ET15 (seção 12): /metrics expõe todas as séries exigidas e os contadores
+ * Seção 12: /metrics expõe todas as séries exigidas e os contadores
  * reagem ao fluxo real (transação, replay de idempotência, divergência de
  * reconciliação). O middleware de correlação devolve o header na resposta.
  */
@@ -16,7 +16,7 @@ function metricValue(text: string, name: string, labels: string): number {
   return Number(line.slice(line.lastIndexOf(' ') + 1));
 }
 
-describe('ET15 — observabilidade', () => {
+describe('observabilidade (seção 12)', () => {
   let app: TestApp;
 
   beforeAll(async () => {

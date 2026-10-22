@@ -4,7 +4,7 @@ import { buildLogger } from '../../src/shared/infrastructure/logging/logger';
 import { correlationBindings, correlationMiddleware, runWithCorrelation, updateCorrelation } from '../../src/shared/infrastructure/logging/correlation';
 
 /**
- * ET15: a cadeia de correlação é injetada automaticamente em toda linha de
+ * A cadeia de correlação é injetada automaticamente em toda linha de
  * log via AsyncLocalStorage + mixin do pino — e o middleware HTTP propaga
  * o header X-Correlation-ID.
  */

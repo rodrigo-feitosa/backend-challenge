@@ -3,7 +3,7 @@ import { EntitySchema } from '@mikro-orm/core';
 /**
  * Entidades MikroORM de inbox e outbox — somente infraestrutura.
  * Os domínios (InboxMessage, OutboxMessage, IntegrationEvent) serão
- * mapeados nos repositórios (ET10/ET11).
+ * mapeados nos repositórios de inbox e outbox.
  */
 export class InboxMessageEntity {
   id!: string;

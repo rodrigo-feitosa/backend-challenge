@@ -24,7 +24,7 @@ const log = createLogger('reconciliation');
  * reconstruído pelo ledger (Σ créditos − Σ débitos) em leitura consistente.
  *
  * Divergências NUNCA são corrigidas silenciosamente: são logadas (JSON
- * estruturado), contabilizadas em métrica (ET15) e sinalizadas na resposta
+ * estruturado), contabilizadas em métrica e sinalizadas na resposta
  * com consistent: false. O endpoint é um relatório — retorna 200 mesmo
  * divergente.
  */

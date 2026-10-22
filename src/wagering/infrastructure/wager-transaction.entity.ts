@@ -2,7 +2,7 @@ import { EntitySchema } from '@mikro-orm/core';
 
 /**
  * Entidade MikroORM da tabela `wager_transactions` — somente infraestrutura.
- * O domínio (WagerTransaction) será mapeado nos repositórios (ET6/ET7).
+ * O domínio (WagerTransaction) é mapeado para/de esta entidade nos repositórios.
  * `referenceTransactionId` é o id INTERNO da transação referenciada;
  * `referenceExternalTxId` é o id no provedor.
  * `balanceAfterCents`/`balanceAfterCurrency` é o snapshot para replay

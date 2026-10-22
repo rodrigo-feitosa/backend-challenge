@@ -6,7 +6,7 @@ export const OUTBOX_REPOSITORY = Symbol('OUTBOX_REPOSITORY');
 /**
  * Porta do repositório da outbox. O enqueue acontece na MESMA transação
  * da alteração financeira (§11). Os métodos de consulta/claim para o
- * worker (SKIP LOCKED) entram na ET12.
+ * worker (SKIP LOCKED) da publicação.
  */
 export interface OutboxRepository {
   enqueue(message: OutboxMessage, em: EntityManager): Promise<void>;

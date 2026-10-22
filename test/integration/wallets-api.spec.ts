@@ -6,10 +6,10 @@ import { configureApp } from '../../src/app.setup';
 import { startTestDatabase, type TestDatabase } from '../support/test-db';
 
 /**
- * ET5: API de wallets — criação atômica com OPENING, conflito 409,
+ * API de wallets — criação atômica com OPENING, conflito 409,
  * 400/404 consistentes e paginação estável do ledger.
  */
-describe('wallets API (ET5)', () => {
+describe('wallets API', () => {
   let db: TestDatabase;
   let app: INestApplication;
   let base: string;

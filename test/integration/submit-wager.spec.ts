@@ -6,11 +6,11 @@ import { configureApp } from '../../src/app.setup';
 import { startTestDatabase, type TestDatabase } from '../support/test-db';
 
 /**
- * ET7: submissão de transações — regras da tabela §7, idempotência
+ * Submissão de transações — regras da tabela §7, idempotência
  * (replay com snapshot da regra 7.7, conflito de payload) e invariante
  * final saldo == ledger.
  */
-describe('submit wager transactions (ET7)', () => {
+describe('submit wager transactions', () => {
   let db: TestDatabase;
   let app: INestApplication;
   let base: string;

@@ -55,7 +55,7 @@ export class WageringController {
     if (!idempotencyKey || idempotencyKey.trim() === '') {
       throw new ValidationError('Idempotency-Key header is required');
     }
-    // correlationId: header de correlação ou gerado por requisição (ET15 o propaga nos logs)
+    // correlationId: header de correlação ou gerado por requisição (propagado nos logs)
     const correlationId = correlationHeader || cryptoRandomUUID();
     const result = await this.submit.execute(
       {
