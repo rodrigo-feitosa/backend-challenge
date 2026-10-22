@@ -57,7 +57,8 @@ services:
       SQS_QUEUE_TRANSACTIONS_URL: http://localstack:4566/000000000000/wager-transactions.fifo
       SQS_QUEUE_DLQ_URL: http://localstack:4566/000000000000/wager-transactions-dlq.fifo
       SQS_QUEUE_EVENTS_URL: http://localstack:4566/000000000000/wagering-events.fifo
-      AUTH_ENABLED: "true"
+      # ET14 (auth/Keycloak) não implementada — variáveis reservadas, ninguém lê (ver ADR-007)
+      AUTH_ENABLED: "false"
       AUTH_ISSUER_URL: http://keycloak:8080/realms/jungle
       AUTH_AUDIENCE: wagering-api
     ports:
