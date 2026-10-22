@@ -17,7 +17,7 @@ describe('migrations e constraints (I1)', () => {
 
   afterAll(async () => {
     await db?.stop();
-  });
+  }, 30_000);
 
   it('aplica up, reverte com down e reaplica (migrations reversíveis)', async () => {
     const migrator = db.orm.getMigrator();

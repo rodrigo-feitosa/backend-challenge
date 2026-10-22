@@ -15,7 +15,7 @@ describe('queries and reconciliation (ET9)', () => {
 
   afterAll(async () => {
     await testApp?.stop();
-  });
+  }, 30_000);
 
   describe('GET /wagering/transactions/:id', () => {
     it('retorna a transação por id interno e por provider+external', async () => {

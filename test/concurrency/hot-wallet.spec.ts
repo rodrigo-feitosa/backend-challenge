@@ -30,7 +30,7 @@ describe('C2 — cenário obrigatório: 2×80.00 sobre 100.00', () => {
 
   afterAll(async () => {
     await testApp?.stop();
-  });
+  }, 30_000);
 
   for (let attempt = 1; attempt <= 5; attempt++) {
     it(`disputa simultânea (execução ${attempt}/5 para determinismo)`, async () => {

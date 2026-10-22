@@ -103,7 +103,7 @@ describe('atomicidade wallet+ledger+transação+outbox (I2)', () => {
 
   afterAll(async () => {
     await db?.stop();
-  });
+  }, 30_000);
 
   it('caso feliz: wallet, ledger, transação e outbox persistem juntos', async () => {
     const { walletId, playerId } = await createWallet('100.00');

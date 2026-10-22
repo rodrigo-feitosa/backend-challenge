@@ -36,7 +36,7 @@ describe('wallets API (ET5)', () => {
   afterAll(async () => {
     await app?.close();
     await db?.stop();
-  });
+  }, 30_000);
 
   describe('POST /wallets', () => {
     it('cria wallet com saldo, version=1 e lançamento OPENING CREDIT atômico', async () => {

@@ -73,7 +73,7 @@ describe('publishers concorrentes na outbox (I4/C6)', () => {
 
   afterAll(async () => {
     await db?.stop();
-  });
+  }, 30_000);
 
   it('30 mensagens, 2 workers simultâneos: todas publicadas exatamente uma vez, nenhuma perdida ou presa', async () => {
     const ids = new Set<string>();

@@ -50,7 +50,7 @@ describe('submit wager transactions (ET7)', () => {
   afterAll(async () => {
     await app?.close();
     await db?.stop();
-  });
+  }, 30_000);
 
   const createWallet = async (playerSuffix: string, balance = '100.00'): Promise<{ id: string; playerId: string }> => {
     const playerId = `01920000-0000-7000-8000-${playerSuffix.padStart(12, '0')}`;

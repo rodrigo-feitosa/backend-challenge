@@ -28,7 +28,7 @@ describe('C1 — mesma aposta 50x em paralelo', () => {
 
   afterAll(async () => {
     await testApp?.stop();
-  });
+  }, 30_000);
 
   it('C1a: mesma key 50x → 1 débito, 49 replays idênticos', async () => {
     const walletId = await createWallet(base, playerIdFrom('c1a00000001'), '100.00');

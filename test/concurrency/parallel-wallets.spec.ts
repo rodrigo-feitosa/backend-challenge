@@ -25,7 +25,7 @@ describe('C3 — wallets distintas em paralelo', () => {
 
   afterAll(async () => {
     await testApp?.stop();
-  });
+  }, 30_000);
 
   it('20 wallets com 5 transações cada, em paralelo — todas corretas e sem serialização global', async () => {
     const N_WALLETS = 20;
