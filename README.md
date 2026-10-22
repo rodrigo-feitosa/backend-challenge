@@ -26,6 +26,28 @@ curl -s localhost:3000/health/live
 curl -s localhost:3000/health/ready
 ```
 
+Parar o ambiente (os dados do Postgres persistem em volume; para apagar tudo: `docker compose down -v`):
+
+```bash
+docker compose down
+```
+
+### Desenvolvimento local (app no host, infra em containers)
+
+Alternativa ao app em container: sobe só a infra e roda o Bun direto — útil para iterar no código.
+
+```bash
+bun install
+docker compose up -d postgres localstack
+cp .env.example .env   # e ajuste se necessário (as variáveis abaixo já vêm corretas para LocalStack)
+
+set -a; source .env; set +a   # exporta as variáveis do arquivo
+bun run migration:up
+bun run start:dev
+```
+
+O `.env.example` já traz os valores para LocalStack (`SQS_ENDPOINT=http://localhost:4566`, filas, credenciais de teste). As migrations rodam automaticamente no boot (`MIGRATIONS_ON_START` default `true`); `bun run migration:up|down` é para controle manual.
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Descrição |
@@ -37,8 +59,10 @@ curl -s localhost:3000/health/ready
 | `CONSUMER_ENABLED` | `true` | liga/desliga o consumer SQS |
 | `WORKERS_ENABLED` | `true` | liga/desliga os workers (outbox publisher, pending-reference) |
 | `SQS_ENDPOINT` | — | endpoint SQS (LocalStack) |
+| `AWS_REGION` | — | região AWS (ex.: `us-east-1`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | — | credenciais (qualquer valor no LocalStack) |
 | `SQS_QUEUE_TRANSACTIONS_URL` | — | fila de transações |
-| `SQS_QUEUE_DL_URL` | — | DLQ |
+| `SQS_QUEUE_DLQ_URL` | — | DLQ |
 | `SQS_QUEUE_EVENTS_URL` | — | fila de eventos de saída |
 | `VISIBILITY_TIMEOUT_S` | `90` | visibility timeout do consumer |
 | `CONSUMER_WAIT_TIME_S` | `20` | long polling |
